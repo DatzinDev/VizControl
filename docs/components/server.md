@@ -37,6 +37,7 @@ All responses are JSON. Lists are paged with `offset`/`limit`. Fields derived by
 | `GET /api/runs` | Run summaries: id, target, kind, outcome, started, duration, calls, truncated. | `Reader.run` |
 | `GET /api/runs/{run}` | Full run metadata and config. | `Reader.run` |
 | `GET /api/runs/{run}/stages` | Stage graph + main path (Level 1). | `analysis.stages` |
+| `GET /api/runs/{run}/stage?name=` | One stage opened into module › class › function (Level 2). 404 unless `name` is a stage of the run, so only real stages are cached. | `analysis.stage_detail` |
 | `GET /api/runs/{run}/tree?node=&depth=&limit=` | Tree slice with aggregated groups (Levels 2–3). Roots when `node` is omitted. `depth` ≤ 4. | `analysis.subtree` |
 | `GET /api/runs/{run}/tree?node=&code=&offset=&limit=` | Members of one `×N` group, paged. | `analysis.group_members` |
 | `GET /api/runs/{run}/calls/{id}` | Call detail: code, file, line, caller, timing, outcome, exception, child count. | `Reader.call` |
