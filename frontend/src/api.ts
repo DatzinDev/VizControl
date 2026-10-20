@@ -1,6 +1,6 @@
 // Typed client for the `vizcontrol serve` JSON API (docs/components/server.md).
 
-export type Outcome = "ok" | "raised" | "unfinished" | "running" | "assertion_failed";
+export type Outcome = "ok" | "raised" | "unfinished" | "running" | "assertion_failed" | "skipped";
 
 export interface RunSummary {
   id: string;

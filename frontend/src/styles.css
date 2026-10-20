@@ -43,6 +43,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .ok { color: var(--ok); }
 .raised { color: var(--raised); }
 .unfinished, .running { color: var(--unfinished); }
+.assertion_failed { color: var(--raised); }
+.skipped { color: var(--muted); }
 .flow { color: var(--flow); }
 
 /* shell */

@@ -17,11 +17,13 @@ export const outcomeIcon: Record<string, string> = {
   unfinished: "◌",
   running: "◌",
   assertion_failed: "⚠",
+  skipped: "○",
 };
 
 /** "checkout.py vip": what was run, as typed. */
 export function runLabel(run: { target: string; args?: string[] }): string {
-  return [run.target, ...(run.args ?? [])].join(" ");
+  const test = run.target.split("::").slice(1).join("::");  // pytest node id: the test name is what matters
+  return test || [run.target, ...(run.args ?? [])].join(" ");
 }
 
 /** One field-level change as a line: "+ x = 1", "− x", "x 1 → 2". */
