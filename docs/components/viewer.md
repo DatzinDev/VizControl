@@ -15,7 +15,8 @@ lays out, renders and navigates. Visual concept: [UI design](../ui-design.md).
 | Shell (top bar, breadcrumbs, runs/stages/filters panel, inspector), dark and light themes from the Penpot tokens | Timeline strip |
 | Level 1 stage graph with main path. Double-click (or the stage list) opens the stage at Level 2 | Moving between levels without animated zoom |
 | Level 2: the stage as module › class › function boxes (elk compound layout, top to bottom), neighbouring stages collapsed around it; a function opens its first call, a collapsed stage opens that stage | |
-| Level 3 call tree: lazy expansion, `×N` groups with paged members, opaque/unfinished/raised states | Diff tab (disabled) |
+| Level 3 call tree: lazy expansion, `×N` groups with paged members, opaque/unfinished/raised states | Diff: synced selection between the two sides |
+| Diff (S7): pick run B (same target first), common path paired with `=`, the split in a dashed block, inspector with summary, first divergence, argument diff and the branch source; a card opens its call in its run | |
 | Failure mode: opens on the origin, red error path, off-path dimming, exception/locals/last-changes/traceback/source | Filters on the stage graph and Level 2 (they apply to the call tree) |
 | Filters: stage checkboxes, minimum duration, library leaves. Filtered calls and what is expanded under them fold into one "hidden (N)" stub per parent; the selection and the error path always show | |
 | Level 4 value tree, object history and field-level changes | Provenance marks beyond groups, stages, flow and changes |
@@ -82,7 +83,9 @@ click goes up one level.
   sits inside another value says so (`in order.customer`). Clicking a step opens its call in Execution Flow, and the
   Data Flow tab goes back to the object. The inspector shows the lifecycle, the changes, other objects in the run
   and the provenance note. The canvas starts at a readable zoom from the first step instead of fitting a long flow.
-- **Diff** (FR-VIZ-11, Later): two runs side by side, aligned, the divergence point marked and synced selection.
+- **Diff** (FR-VIZ-11): the current run (A) and a picked run (B) side by side: the common path to where they split,
+  each side's calls there, and why (argument diff, branch source). The URL keeps `vs`. A card opens its call in its
+  run; Back returns to the diff.
 - **Source panel** (FR-VIZ-9, Should): read-only code view of the call's file with the call/raise line
   highlighted, from `/source`.
 

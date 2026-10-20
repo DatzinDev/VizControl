@@ -26,7 +26,7 @@ function Outcome({ outcome, extra }: { outcome: string; extra?: string }) {
   );
 }
 
-function Section({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
+export function Section({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={`section ${className ?? ""}`}>
       <div className="label">{title}</div>
@@ -35,7 +35,7 @@ function Section({ title, children, className }: { title: string; children: Reac
   );
 }
 
-function KV({ rows }: { rows: [string, React.ReactNode][] }) {
+export function KV({ rows }: { rows: [string, React.ReactNode][] }) {
   return (
     <div className="kv">
       {rows.map(([k, v]) => [<span key={`k${k}`} className="k">{k}</span>, <span key={`v${k}`} className="v">{v}</span>])}

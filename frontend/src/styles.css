@@ -177,6 +177,20 @@ button.oid:hover { outline: 1px solid var(--flow); }
 .back { color: var(--muted); font-size: 12px; align-self: flex-start; }
 .back:hover { color: var(--accent); }
 
+/* diff (S7) */
+.diff-view { position: absolute; inset: 0; overflow: auto; padding: 56px 24px 24px; display: flex; flex-direction: column; gap: 10px; }
+.diff-row, .diff-split { display: grid; grid-template-columns: 1fr 24px 1fr; gap: 8px; align-items: center; padding-left: calc(var(--d, 0) * 14px); }
+.diff-row.head { padding-left: 0; margin-bottom: 6px; }
+.diff-row .muted.mono { text-align: center; }
+.accent { color: var(--accent); }
+.diff-card { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); text-align: left; max-width: 300px; font-size: 11px; }
+.diff-card .q { font-family: var(--mono); font-size: 12px; font-weight: 600; }
+.diff-card.raised { border-color: var(--raised); }
+.diff-card:hover { border-color: var(--accent); }
+.diff-split { border: 1.5px dashed var(--unfinished); border-radius: 8px; padding-top: 10px; padding-bottom: 10px; align-items: start; background: color-mix(in srgb, var(--unfinished) 6%, transparent); }
+.diff-split .col { display: flex; flex-direction: column; gap: 8px; }
+.diff-badge { align-self: flex-start; color: var(--unfinished); border: 1px solid var(--unfinished); border-radius: 6px; padding: 2px 10px; font-size: 12px; }
+
 /* source panel */
 .source-panel { width: min(960px, 94vw); display: flex; flex-direction: column; max-height: 76vh; }
 .source-panel .head { display: flex; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 12px; }
