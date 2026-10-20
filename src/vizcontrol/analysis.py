@@ -789,14 +789,18 @@ class Timeline:
     ponytail: three ints per step in memory; a run of millions of calls costs ~100 MB here, page from SQL if needed."""
 
     def __init__(self, reader: Reader):
-        steps = []
-        for cid, start, end, outcome in reader.call_events():
+        steps, setup = [], set()
+        for cid, start, end, outcome, kind in reader.call_events():
             steps.append((start, 0, cid))
             if end is not None:  # an unfinished call never ends
                 steps.append((end, 2 if outcome == "raised" else 1, cid))
+            if kind in ("module", "class"):
+                setup.add(cid)
         steps.sort()
         self.steps = steps
         self.raises = [i for i, s in enumerate(steps) if s[1] == 2]
+        # where the program starts doing its work: the first call that is not an import or a class body
+        self.start = next((i for i, (_, kind, cid) in enumerate(steps) if kind == 0 and cid not in setup), 0)
 
     def index_at(self, seq: int) -> int:
         """The first step at or after `seq`."""
@@ -829,7 +833,7 @@ class Timeline:
                                              "origin": exc["raised_call_id"] == cid, "line": exc["raised_line"]}
                 step["values"] = raised.get(cid, [])
             out.append(step)
-        return {"total": len(self.steps), "offset": offset, "steps": out, "raises": self.raises}
+        return {"total": len(self.steps), "offset": offset, "steps": out, "raises": self.raises, "start": self.start}
 
 
 def call_graph(reader: Reader) -> dict:

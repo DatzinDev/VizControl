@@ -350,8 +350,9 @@ class Reader:
             "ORDER BY binding.seq", (kind, *call_ids))
 
     def call_events(self) -> list[tuple]:
-        """(id, seq_start, seq_end, outcome) of every call: what a timeline is made of."""
-        return self.db.execute("SELECT id, seq_start, seq_end, outcome FROM call").fetchall()
+        """(id, seq_start, seq_end, outcome, code kind) of every call: what a timeline is made of."""
+        return self.db.execute("SELECT call.id, seq_start, seq_end, outcome, code.kind FROM call "
+                               "JOIN code ON code.id = call.code_id").fetchall()
 
     def bindings_of(self, call_ids: list[int]) -> list[dict]:
         """Every binding of the given calls, with its value, in time order."""
