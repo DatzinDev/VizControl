@@ -337,9 +337,13 @@ def make_server(path: str | Path, host: str = "127.0.0.1", port: int = 7171) -> 
     return server
 
 
-def serve(path: str | Path, host: str = "127.0.0.1", port: int = 7171, open_browser: bool = True) -> int:
+def serve(path: str | Path, host: str = "127.0.0.1", port: int = 7171, open_browser: bool = True,
+          run: str | None = None) -> int:
+    """Serve the runs under `path` until Ctrl+C; the browser opens on `run` (a run id) if given."""
     server = make_server(path, host, port)
     url = f"http://{'localhost' if host in ('127.0.0.1', 'localhost') else host}:{server.server_address[1]}/"
+    if run:
+        url += f"#run={quote(run)}"
     if host not in ("127.0.0.1", "localhost", "::1"):
         print(f"vizcontrol: warning: serving on {host}; traces may contain sensitive data", file=sys.stderr)
     print(f"vizcontrol: serving {server.runs.root} at {url}  (Ctrl+C to stop)", file=sys.stderr)

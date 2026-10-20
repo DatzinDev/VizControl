@@ -30,7 +30,7 @@ def _split_run(argv: list[str]) -> tuple[list[str], str, str, list[str]]:
 
 
 def _run(argv: list[str]) -> int:
-    from vizcontrol.runners import run_module, run_script
+    from vizcontrol.runners import default_path, run_module, run_script
 
     ours, kind, target, target_args = _split_run(argv)
     p = argparse.ArgumentParser(prog="vizcontrol run")
@@ -40,6 +40,7 @@ def _run(argv: list[str]) -> int:
     p.add_argument("--include", action="append")
     p.add_argument("--exclude", action="append")
     p.add_argument("--config")
+    p.add_argument("--serve", action="store_true", help="then open the run in the browser")
     opts = p.parse_args(ours)
     try:
         config = load_config(opts.config, level=opts.level, out_dir=opts.out_dir,
@@ -52,7 +53,20 @@ def _run(argv: list[str]) -> int:
         print(f"vizcontrol: can't open file {target!r}", file=sys.stderr)
         return 2
     runner = run_script if kind == "script" else run_module
-    return runner(target, target_args, config, opts.output)
+    output = Path(opts.output) if opts.output else default_path(config.out_dir, target)
+    code = runner(target, target_args, config, output)
+    if not opts.serve:
+        default = output.parent.resolve() == Path(load_config().out_dir).resolve()  # `vizcontrol serve` finds it
+        where = "" if default else f" {output.parent}"
+        print(f"vizcontrol: explore it with: vizcontrol serve{where}  (or trace with run --serve)", file=sys.stderr)
+        return code
+    from vizcontrol.server import serve
+
+    try:
+        serve(output.parent, run=output.name)
+    except OSError:  # the default port is taken (another viewer): any free one
+        serve(output.parent, port=0, run=output.name)
+    return code
 
 
 def _duration(run: dict) -> str:
