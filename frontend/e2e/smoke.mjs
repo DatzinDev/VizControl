@@ -188,6 +188,21 @@ await check("the map joins all runs and shows each run's route", async () => {
   expect((await json()).includes("main"), "json is not on the basic route");
 });
 
+await check("a failed run's overview marks where it stopped and what it never reached", async () => {
+  await page.goto(`${base}#run=vip.vizc`, { waitUntil: "networkidle0" });
+  await page.reload({ waitUntil: "networkidle0" });
+  await wait(1200);
+  expect((await text(".banner")).includes("compare with checkout.py basic"), "the failure banner offers no comparison");
+  await page.$$eval(".crumbs button", (bs) => bs[0].click());
+  await wait(1200);
+  expect((await text(".level")) === "L1 · Overview", `level is ${await text(".level")}`);
+  expect((await text(".stage.stopped .name")) === "app.pricing", "the stopped stage is not app.pricing");
+  expect((await text(".stage.ghost .name")) === "json", "json is not shown as not reached");
+  await page.$$eval(".inspector .link", (ls) => ls.find((l) => l.textContent.startsWith("Compare with")).click());
+  await wait(1200);
+  expect((await text(".level")) === "Diff", `compare went to ${await text(".level")}`);
+});
+
 await check("no uncaught page errors", async () => expect(!errors.length, errors.join("; ")));
 await browser.close();
 process.exit(failures ? 1 : 0);

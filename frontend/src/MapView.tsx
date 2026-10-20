@@ -1,8 +1,35 @@
 import { RouteMap, RunSummary, StageNode } from "./api";
+import { Ghosts } from "./StageView";
 import { calls, ms, outcomeIcon, runLabel } from "./format";
 import { KV, Section } from "./Inspector";
 
 type Open = (run: string, stage: string) => void;
+
+/** The run a failed run is shown against: the latest ok run of the same target, else the ok run whose route shares
+ * the most stages with it (another test, another request to the same code). */
+export function referenceFor(run: RunSummary, runs: RunSummary[], map: RouteMap): string | null {
+  const ok = runs.filter((r) => r.id !== run.id && r.outcome === "ok" && !r.error);
+  const same = ok.filter((r) => r.target === run.target).sort((a, b) => b.started.localeCompare(a.started));
+  if (same.length) return same[0].id;
+  const mine = new Set(map.routes.find((r) => r.run === run.id)?.stages ?? []);
+  const shared = (id: string) => (map.routes.find((r) => r.run === id)?.stages ?? []).filter((s) => mine.has(s)).length;
+  const best = ok.map((r) => [shared(r.id), r] as const).filter(([n]) => n > 0).sort((a, b) => b[0] - a[0] || b[1].started.localeCompare(a[1].started));
+  return best.length ? best[0][1].id : null;
+}
+
+/** What `ref` reached that `run` didn't, from the map: those stages and the edges into them. */
+export function ghostsOf(run: string, ref: string, map: RouteMap, label: string): Ghosts | undefined {
+  const mine = new Set(map.routes.find((r) => r.run === run)?.stages ?? []);
+  const theirs = map.routes.find((r) => r.run === ref);
+  if (!theirs) return undefined;
+  const missing = new Set(theirs.stages.filter((s) => !mine.has(s)));
+  if (!missing.size) return undefined;
+  return {
+    nodes: map.nodes.filter((n) => missing.has(n.name)).map((n) => ({ ...n, runs: undefined })),
+    edges: theirs.edges.filter(([a, b]) => missing.has(a) || missing.has(b)),
+    seenIn: label,
+  };
+}
 
 function RunLink({ run, onOpen, stage }: { run?: RunSummary; onOpen: Open; stage: string }) {
   if (!run) return null;

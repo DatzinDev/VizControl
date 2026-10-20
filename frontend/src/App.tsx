@@ -7,7 +7,7 @@ import { DataFlowView, ObjectPicker } from "./DataFlowView";
 import { DiffInspector, DiffPicker, DiffView } from "./DiffView";
 import { ms, outcomeIcon, runLabel, shortName } from "./format";
 import { CallInspector, ComponentInspector, ObjectInspector, RunInspector, StageInspector, ValueInspector } from "./Inspector";
-import { MapInspector } from "./MapView";
+import { ghostsOf, MapInspector, referenceFor } from "./MapView";
 import { SearchPalette } from "./SearchPalette";
 import { StageView } from "./StageView";
 import { callKey, Item, Key, useCallTree } from "./useCallTree";
@@ -114,6 +114,15 @@ export function App() {
       live = false;
     };
   }, [runId, compareWith, view === "diff"]);
+
+  useEffect(() => {  // a failed run is shown against a run that got further: the map says which
+    if (!error || view === "map") return;
+    let live = true;
+    api.map().then((m) => live && setRouteMap(m)).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [error]);
 
   const goMap = useCallback(() => {
     setView("map");
@@ -268,6 +277,10 @@ export function App() {
     return next;
   });
 
+  const reference = run && error && routeMap ? referenceFor(run, runs, routeMap) : null;
+  const refRun = runs.find((r) => r.id === reference);
+  const ghosts = useMemo(() => (runId && refRun && routeMap ? ghostsOf(runId, refRun.id, routeMap, runLabel(refRun)) : undefined),
+    [runId, refRun, routeMap]);
   const errorPath = useMemo(() => new Set<Key>(error ? error.path.map((c) => callKey(c.id)) : []), [error]);
   const selectedCall: CallNode | undefined =
     selection?.kind === "call" ? tree.callItem(callKey(selection.id)) ?? error?.path.find((c) => c.id === selection.id) : undefined;
@@ -375,13 +388,18 @@ export function App() {
           {problem && <div className="empty raised">{problem}</div>}
           {!problem && view === "stages" && stages && (
             <>
-              <div className="hint">Main path in accent · double-click a stage to open it</div>
+              <div className="hint">
+                {error ? <>Failed in <span className="raised">{error.origin.stage}</span>{ghosts ? ` · grey: not reached, seen in ${ghosts.seenIn}` : ""}</>
+                  : "Main path in accent"} · double-click a stage to open it
+              </div>
               <CopyMermaid runId={runId!} />
               <StageView
                 graph={stages}
+                stopped={error?.origin.stage ?? undefined}
+                ghosts={ghosts}
                 selected={selection?.kind === "stage" ? selection.name : null}
                 onSelect={(name) => { setSelection({ kind: "stage", name }); setValue(null); }}
-                onOpen={showStage}
+                onOpen={(name) => (refRun && ghosts?.nodes.some((n) => n.name === name) ? openFromMap(refRun.id, name) : showStage(name))}
               />
             </>
           )}
@@ -405,7 +423,10 @@ export function App() {
           {!problem && view === "calls" && (
             <>
               {error ? (
-                <div className="banner">⚠ Run failed · {error.exception.type} in {shortName(error.origin.qualname)} · error path in red</div>
+                <div className="banner">
+                  ⚠ Run failed · {error.exception.type} in {shortName(error.origin.qualname)} · error path in red
+                  {refRun && <> · <button className="link" onClick={() => { push(); goDiff(refRun.id); }}>compare with {runLabel(refRun)}</button></>}
+                </div>
               ) : (
                 <div className="hint">Click a call to inspect it · › expands · Esc back to stages</div>
               )}
@@ -428,7 +449,7 @@ export function App() {
               <>
                 <div className="hint">Stage {detail.stage} opened · modules › classes › functions · click a function to open its first call</div>
                 <CopyMermaid runId={runId!} stage={detail.stage} />
-                <ComponentView detail={detail} onOpenStage={showStage} onOpenCall={openCall} />
+                <ComponentView detail={detail} onOpenStage={showStage} onOpenCall={openCall} stopped={error?.origin.code_id} />
               </>
             ) : <div className="empty">Loading…</div>
           )}
@@ -471,10 +492,21 @@ export function App() {
             <CallInspector run={runId} id={selection.id} error={error} onOpenCall={openCall} onOpenValue={(b) => { push(); setValue(b); }}
               cut={selectedCall ? cut(selectedCall) : null} />
           )}
-          {!value && selection?.kind === "stage" && stages && (
+          {!value && selection?.kind === "stage" && stages?.nodes.some((n) => n.name === selection.name) && (
             <StageInspector stage={stages.nodes.find((n) => n.name === selection.name)!} onOpenCall={openCall} onOpenStage={showStage} />
           )}
-          {!value && !selection && run && <RunInspector run={run} error={error} onOpenCall={openCall} />}
+          {!value && selection?.kind === "stage" && refRun && ghosts?.nodes.some((n) => n.name === selection.name) && (
+            <>
+              <div className="title-lg">{selection.name}</div>
+              <div className="box dashed muted" style={{ fontSize: 12 }}>┄ Not reached by this run. <span className="mono">{ghosts.seenIn}</span> went through it.</div>
+              <button className="link" onClick={() => openFromMap(refRun.id, selection.name)}>Open it in {ghosts.seenIn} →</button>
+              <button className="link" onClick={() => { push(); goDiff(refRun.id); }}>Compare the two runs →</button>
+            </>
+          )}
+          {!value && !selection && run && (
+            <RunInspector run={run} error={error} onOpenCall={openCall}
+              reference={refRun && { label: runLabel(refRun), notReached: ghosts?.nodes.length ?? 0, onCompare: () => { push(); goDiff(refRun.id); } }} />
+          )}
           </>}
         </aside>
       </div>

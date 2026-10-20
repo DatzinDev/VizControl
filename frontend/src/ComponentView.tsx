@@ -28,8 +28,9 @@ function FnView({ data }: NodeProps) {
   const f = data.f as StageFunction;
   const state = !f.observed ? "opaque" : f.raised ? "raised" : f.unfinished ? "unfinished" : "";
   return (
-    <div className={`node ${state}`} title={`${f.qualname}\nclick to open its first call`}>
+    <div className={`node ${state} ${data.stopped ? "stopped" : ""}`} title={`${f.qualname}\nclick to open its first call`}>
       {handles}
+      {data.stopped ? <div className="stopped-badge">⚠ stopped here</div> : null}
       <div className="title">
         {f.raised > 0 && <span className="raised">⚠</span>}
         <span className="q">{fnLabel(f)}</span>
@@ -64,8 +65,9 @@ export function ComponentView(props: {
   detail: StageDetail;
   onOpenStage: (name: string) => void;
   onOpenCall: (id: number) => void;
+  stopped?: number;  // code id of the function where the run failed
 }) {
-  const { detail, onOpenStage, onOpenCall } = props;
+  const { detail, onOpenStage, onOpenCall, stopped } = props;
   const [rects, setRects] = useState<Map<string, Rect> | null>(null);
 
   // the nesting: stage › module › class (if any) › function
@@ -125,7 +127,7 @@ export function ComponentView(props: {
     for (const [cls, fs] of classes) {
       const parent = cls ? `c:${m}:${cls}` : `m:${m}`;
       if (cls) nodes.push(at(parent, `m:${m}`, { type: "box", selectable: false, data: { kind: "class", label: `class ${cls}` } }));
-      for (const f of fs) nodes.push(at(`f${f.code_id}`, parent, { type: "fn", data: { f } }));
+      for (const f of fs) nodes.push(at(`f${f.code_id}`, parent, { type: "fn", data: { f, stopped: f.code_id === stopped } }));
     }
   }
   for (const n of neighbours) nodes.push(at(`n:${n}`, undefined, { type: "neighbour", data: { name: n } }));

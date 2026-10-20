@@ -103,6 +103,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .node.opaque { border: 1px dashed var(--opaque); background: var(--surface-2); }
 .node.opaque .title { color: var(--muted); }
 .node.dim { opacity: 0.5; }
+.node.stopped { border: 2px solid var(--raised); position: relative; }
 .node.selected { border: 2px solid var(--accent); box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 45%, transparent); }
 .node.selected.raised { border-color: var(--raised); box-shadow: 0 0 16px color-mix(in srgb, var(--raised) 50%, transparent); }
 .node .expand { position: absolute; right: -11px; top: 18px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border); font-size: 10px; display: grid; place-items: center; color: var(--muted); }
@@ -122,6 +123,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .stage.raised { border-color: var(--raised); }
 .stage.selected { box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 45%, transparent); }
 .stage.dim { opacity: 0.75; }
+.stage.stopped { border: 2px solid var(--raised); position: relative; }
+.stopped-badge { position: absolute; top: -11px; right: 8px; background: var(--raised); color: var(--bg); font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px; }
+.stage.ghost { border: 1px dashed var(--muted); background: none; opacity: 0.6; }
 .react-flow__handle { opacity: 0; pointer-events: none; }
 
 /* components (Level 2) */
