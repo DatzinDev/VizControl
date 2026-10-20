@@ -62,6 +62,8 @@ await check("a callback says how it was called and where the function came from"
   const box = await text(".callback-box");
   expect(box.includes("didn't call it by name") && box.includes("self.steps["), `callback: ${box} / ${lines.length}`);
   expect((await text(".transcript .line.now")).includes("↩"), "the transcript doesn't mark the callback");
+  for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowRight");  // past it: on the path an edge has no label
+  await wait(600);
   expect((await page.$$eval(".react-flow__edge-text", (ts) => ts.some((t) => t.textContent.includes("via self.steps")))), "no 'via' edge");
 });
 
@@ -76,6 +78,29 @@ await check("the arrows never disappear while the recording plays", async () => 
   }
   await page.click(".scrubber .play");
   expect(Math.min(...counts) > 0 && Math.min(...counts) === Math.max(...counts), `edges went ${Math.min(...counts)}..${Math.max(...counts)}`);
+});
+
+await check("the path to the current call is painted, and nodes can be moved", async () => {
+  await open("ok.vizc");
+  for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowRight");
+  await wait(800);
+  const depth = (await page.$$(".stack-row")).length;
+  expect((await page.$$(".react-flow__edge.live")).length >= Math.min(depth - 2, 1), "no edge painted on the path");
+  const pos = () => page.$$eval(".react-flow__node-fn", (ns) => {
+    const r = ns.find((n) => n.textContent.startsWith("main")).getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  const a = await pos();
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move(a.x + 30, a.y + 80, { steps: 6 });
+  await page.mouse.up();
+  await wait(400);
+  expect((await pos()).y - a.y > 40, "main did not move");
+  expect((await page.$$(".react-flow__edge")).length > 0, "moving a node lost the arrows");
+  await page.click(".reset-layout");
+  await wait(400);
+  expect(Math.abs((await pos()).y - a.y) < 5, "Reset layout did not put it back");
 });
 
 await check("a failed run opens on the step where it raised", async () => {

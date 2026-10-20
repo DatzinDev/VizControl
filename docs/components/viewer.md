@@ -14,8 +14,10 @@ graph and the watches; the viewer lays them out and plays them.
 - **Call graph**: functions as nodes inside one box per module, so the layers of a project show; an arrow per
   "A called B". As the recording plays it lights up: functions already run, the call stack, the current function,
   red where it raised. Imports and class bodies are left off the graph. Callback arrows (see below) are dashed and
-  labelled with where the function was (`via self.steps[1]`). Click a function to jump to its first call. In a graph
-  of more than 40 functions the camera follows the current one.
+  labelled with where the function was (`via self.steps[1]`). The path to the current call is drawn solid and thick
+  on top of the rest. Double-click a function to jump to its first call. Nodes and whole module boxes can be dragged
+  (Ctrl/⌘-click selects several, Shift-drag a box); where they were left is remembered per run in this browser, and
+  "Reset layout" puts them back. In a graph of more than 40 functions the camera follows the current one.
 - **Transcript**: one line per step, indented by depth: `→ clean_rows(rows=…)`, `← clean_rows returned …`,
   `✗ RateTable.rate raised KeyError: GBP`, and `↩` for a callback with its tag.
 - **Scrubber**: play and pause (space), step (← →), jump (the bar, the red marks where a call raised), speed.
