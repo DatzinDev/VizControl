@@ -8,7 +8,7 @@ Render a run as a navigable, progressive graph and let the user move from the ov
 without losing context. The viewer is a thin client. All analysis happens in the [server](server.md); the viewer
 lays out, renders and navigates. Visual concept: [UI design](../ui-design.md).
 
-## Status (v0.2)
+## Status (v0.3)
 
 | Done | Pending |
 |---|---|

@@ -1,6 +1,6 @@
 """VizControl: observe real Python executions and explore them as graphs."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 FORMAT_VERSION = "1.1"
 
 from vizcontrol.config import Config, load_config  # noqa: E402
