@@ -73,6 +73,13 @@ def test_script_ok(tmp_path):
     assert paths and all(str(SHOP) in p for p in paths)
 
 
+def test_script_sees_what_python_would_show(tmp_path):
+    (tmp_path / "where.py").write_text("print(__file__)\n")
+    proc = subprocess.run([sys.executable, "-m", "vizcontrol", "run", "-o", "w.vizc", "where.py"],
+                          cwd=tmp_path, capture_output=True, text=True, timeout=60)
+    assert proc.stdout.strip() == str(tmp_path / "where.py")  # absolute, as with `python where.py`
+
+
 def test_script_failure(tmp_path):
     proc, r = run_cli(tmp_path, "checkout.py", "vip")
     assert proc.returncode == 1
