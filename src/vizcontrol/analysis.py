@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import re
 from collections import defaultdict
 
 from vizcontrol.serialize import preview
@@ -213,26 +214,63 @@ def _diff_maps(a: dict, b: dict, path: str, style: str) -> list[dict]:
     return changes
 
 
-def object_flow(reader: Reader, object_id: int) -> dict:
-    """Where one object was seen (as an argument, return value, local...), how it moved and what changed.
-    ponytail: only top-level bindings are searched; an object nested inside another value is not found yet."""
-    rows = reader.object_bindings(object_id)
+def _find(d: dict, oid: int, path: str = "") -> tuple[str, dict] | None:
+    """The encoding of object `oid` inside a value tree and its path (`.customer`, `[0]`). A repeat of an object in
+    one value is a `ref` and comes after its full encoding, so the first non-ref match is the one with content."""
+    if d.get("oid") == oid and d.get("t") != "ref":
+        return path, d
+    for key, child in _children(d):
+        found = _find(child, oid, path + key)
+        if found:
+            return found
+    return None
+
+
+def _children(d: dict) -> list[tuple[str, dict]]:
+    t = d.get("t")
+    if t == "obj":
+        return [(f".{k}", v) for k, v in d["attrs"].items()]
+    if t == "dict":
+        return [(f"[{preview(k, 40)}]", v) for k, v in d["items"]]
+    if t in ("list", "tuple", "set", "frozenset"):
+        return [(f"[{i}]", v) for i, v in enumerate(d["items"])]
+    return []
+
+
+_FIELD = re.compile(r"\.([^.\[]+)|(\[[^\]]*\])")
+
+
+def object_flow(reader: Reader, object_id: int, limit: int = 200) -> dict:
+    """Where one object was seen (as an argument, return value, local, or nested inside one of those), how it moved
+    and what changed. Each appearance carries its fields and which of them changed since the previous one."""
     appearances, links, changes = [], [], []
-    prev = None
-    for r in rows:
-        data = json.loads(r["data"])
-        appearances.append({"call_id": r["call_id"], "qualname": r["qualname"], "seq": r["seq"], "role": r["kind"],
-                            "name": r["name"], "value_id": r["value_id"], "preview": preview(data)})
-        if prev is not None:
-            if prev[0]["call_id"] != r["call_id"]:
-                links.append({"from": prev[0]["call_id"], "to": r["call_id"], "seq": r["seq"], "inferred": True})
-            diff = value_diff(prev[1], data)
-            if diff:
-                changes.append({"seq_before": prev[0]["seq"], "seq_after": r["seq"], "call_before": prev[0]["call_id"],
-                                "call_after": r["call_id"], "changes": diff, "inferred": True})
-        prev = (r, data)
-    return {"object_id": object_id, "type": rows and json.loads(rows[0]["data"]).get("type"),
-            "appearances": appearances, "links": links, "changes": changes}
+    prev, last = None, None  # previous appearance; last full encoding (a depth-truncated one can't be diffed)
+    for r in reader.object_bindings(object_id):
+        found = _find(json.loads(r["data"]), object_id)
+        if found is None:  # the oid matched only a ref
+            continue
+        path, data = found
+        diff = value_diff(last[1], data) if last and data.get("t") != "trunc" else []
+        appearances.append({
+            "call_id": r["call_id"], "qualname": r["qualname"], "module": r["module"], "seq": r["seq"],
+            "role": r["kind"], "name": r["name"], "path": path, "value_id": r["value_id"],
+            "type": data.get("type") or data["t"], "preview": preview(data),
+            "fields": [[k.lstrip("."), preview(v, 60)] for k, v in _children(data)[:8]],
+            "changed": sorted({m.group(1) or m.group(2) for c in diff if (m := _FIELD.match(c["path"]))}),
+        })
+        if prev is not None and prev["call_id"] != r["call_id"]:
+            links.append({"from": prev["call_id"], "to": r["call_id"], "seq": r["seq"], "inferred": True})
+        if diff:
+            changes.append({"seq_before": last[0]["seq"], "seq_after": r["seq"], "call_before": last[0]["call_id"],
+                            "call_after": r["call_id"], "changes": diff, "inferred": True})
+        prev = appearances[-1]
+        if data.get("t") != "trunc":
+            last = (prev, data)
+    named = [a["name"] + a["path"] for a in appearances if a["name"] and a["name"] != "self"]
+    return {"object_id": object_id, "type": appearances[0]["type"] if appearances else None,
+            "name": min(named, key=len) if named else None,
+            "total": len(appearances), "appearances": appearances[:limit], "links": links[:limit],
+            "changes": changes}
 
 
 # -- errors -------------------------------------------------------------------------------------------------------

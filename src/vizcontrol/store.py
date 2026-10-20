@@ -236,11 +236,14 @@ class Reader:
             "code.observed, code.kind FROM call JOIN code ON code.id = call.code_id ORDER BY call.seq_start").fetchall()
 
     def object_bindings(self, object_id: int) -> list[dict]:
+        """Bindings whose value holds the object, at the top level or nested: its oid in the compact JSON is always
+        followed by `,` or `}`. ponytail: scans the value table; write an oid index at capture if it gets slow."""
         return self._all(
             "SELECT binding.call_id, binding.seq, binding.kind, binding.name, binding.line, binding.value_id, "
-            "value.data, code.qualname FROM value JOIN binding ON binding.value_id = value.id "
+            "value.data, code.qualname, code.module FROM value JOIN binding ON binding.value_id = value.id "
             "JOIN call ON call.id = binding.call_id JOIN code ON code.id = call.code_id "
-            "WHERE value.object_id = ? ORDER BY binding.seq", (object_id,))
+            "WHERE value.data LIKE ? OR value.data LIKE ? ORDER BY binding.seq",
+            (f'%"oid":{object_id},%', f'%"oid":{object_id}}}%'))
 
     def search(self, text: str, limit: int = 100) -> dict[str, list[dict]]:
         like = f"%{text}%"
