@@ -129,6 +129,9 @@ reference while in flight (exceptions don't support weakrefs):
   more than 64 have accumulated or at stop.
 - Caught in an untraced frame with nothing traced on the stack (the runner, the `trace()` block) = escaped,
   `handled_call_id = NULL`.
+- Past the first `values.max_per_function` exceptions raised in a function (exceptions as control flow:
+  `list.index` in a loop), the next ones get no value and no locals, and one raised and caught in the same call
+  is not recorded at all. The first excess writes a `limit_exceptions_per_function` gap with the qualname.
 - `StopIteration`, `StopAsyncIteration` and `GeneratorExit` are not recorded: they are how generators and
   coroutines end, and `await` catches the StopIteration that carries a result in C, with no `EXCEPTION_HANDLED`,
   so it would look escaped.
