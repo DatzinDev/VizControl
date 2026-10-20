@@ -235,6 +235,18 @@ def test_values_are_stored_once_and_hot_functions_keep_only_their_first(tmp_path
     assert [(g["kind"], g["detail"]) for g in r.gaps()] == [("limit_values_per_function", "square")]
 
 
+def count_up(n):
+    yield from range(n)
+
+
+def test_a_long_generator_records_its_first_items(tmp_path):
+    with vizcontrol.trace(output=tmp_path / "long.vizc", values={"max_per_function": 3}) as t:
+        sum(count_up(10))
+    r = Reader(t.path)
+    [gen] = by_name(r, "count_up")
+    assert [b["kind"] for b in r.bindings(gen["id"])].count("yield") == 3
+
+
 def pair(i):
     yield square(i)
     yield square(i + 1)
