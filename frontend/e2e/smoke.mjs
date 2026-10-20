@@ -91,6 +91,17 @@ await check("a failed run opens on its failure with the cause", async () => {
   expect((await page.$$(".node.raised")).length >= 3, "error path not highlighted");
 });
 
+await check("filtered calls fold into hidden (N) and the error path stays", async () => {
+  await page.select(".toggle select", "100");
+  await wait(1200);
+  const stubs = await page.$$eval(".node.hidden", (ns) => ns.map((n) => n.textContent));
+  expect(stubs.length >= 1 && stubs.every((t) => /hidden \(\d+\)/.test(t)), `stubs: ${stubs.join(" | ")}`);
+  expect((await page.$$(".node.raised")).length >= 3, "error path was hidden");
+  await page.select(".toggle select", "0");
+  await wait(1000);
+  expect(!(await page.$$(".node.hidden")).length, "stubs remain with no filter");
+});
+
 await check("search finds a function and reveals it", async () => {
   await page.keyboard.down("Control");
   await page.keyboard.press("k");
