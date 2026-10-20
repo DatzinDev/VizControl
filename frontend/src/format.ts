@@ -6,6 +6,8 @@ export function ms(ns: number | null | undefined, approx = false): string {
 }
 
 /** The last segment of a qualname, keeping the class: "OrderService.place_order" stays, "a.<locals>.f" -> "f". */
+export const calls = (n: number) => `${n.toLocaleString()} ${n === 1 ? "call" : "calls"}`;
+
 export function shortName(qualname: string): string {
   const parts = qualname.split(".").filter((p) => p !== "<locals>");
   return parts.slice(-2).join(".");

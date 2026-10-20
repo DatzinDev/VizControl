@@ -1,7 +1,7 @@
 import { Handle, NodeProps, Position } from "@xyflow/react";
 import { CallNode, GroupNode, StageNode } from "./api";
 import { HiddenStub } from "./useCallTree";
-import { ms, outcomeIcon, shortName } from "./format";
+import { calls, ms, outcomeIcon, shortName } from "./format";
 
 export const CALL_W = 220;
 export const CALL_H = 58;
@@ -103,7 +103,7 @@ export function StageNodeView({ data }: NodeProps) {
       <div className={`strip ${!stage.observed ? "opaque" : raised ? "raised" : ""}`} />
       <div className="name">{stage.name}</div>
       <div className="muted" style={{ fontSize: 11 }}>
-        {stage.calls} calls{raised ? <span className="raised"> · {stage.raised} raised</span> : null}
+        {calls(stage.calls)}{raised ? <span className="raised"> · {stage.raised} raised</span> : null}
       </div>
       <div className="mono muted" style={{ fontSize: 11 }}>{ms(stage.total_ns)}</div>
     </div>
