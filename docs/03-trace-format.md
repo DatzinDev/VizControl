@@ -47,10 +47,10 @@ CREATE TABLE file (
 
 CREATE TABLE code (                  -- one row per Python code object seen
   id         INTEGER PRIMARY KEY,
-  file_id    INTEGER NOT NULL REFERENCES file(id),
+  file_id    INTEGER REFERENCES file(id),       -- NULL for native (C) callables
   module     TEXT,                   -- dotted module name, if known
   qualname   TEXT NOT NULL,          -- co_qualname
-  first_line INTEGER NOT NULL,
+  first_line INTEGER,
   kind       TEXT NOT NULL,          -- function | method | lambda | module | generator | coroutine | comprehension
   observed   INTEGER NOT NULL        -- 1 included and traced; 0 opaque (excluded / native)
 );
@@ -68,7 +68,8 @@ CREATE TABLE call (
   end_ns       INTEGER,
   outcome      TEXT NOT NULL,        -- ok | raised | unfinished
   exception_id INTEGER REFERENCES exception(id),
-  children     INTEGER NOT NULL DEFAULT 0     -- direct child count, for lazy UI expansion
+  end_exact    INTEGER NOT NULL DEFAULT 1,    -- 0: end_ns is an upper bound (opaque Python callee)
+  children     INTEGER NOT NULL DEFAULT 0     -- direct child count, filled on close
 );
 
 CREATE TABLE value (
@@ -93,8 +94,8 @@ CREATE TABLE exception (
   id             INTEGER PRIMARY KEY,
   type           TEXT NOT NULL,
   message        TEXT,               -- redacted, truncated
-  raised_call_id INTEGER NOT NULL REFERENCES call(id),
-  raised_line    INTEGER NOT NULL,
+  raised_call_id INTEGER REFERENCES call(id),  -- NULL if raised in a frame not observed (e.g. the trace() block)
+  raised_line    INTEGER,
   handled_call_id INTEGER REFERENCES call(id),  -- where it was caught; NULL if it escaped the run
   cause_id       INTEGER REFERENCES exception(id), -- __cause__ / __context__
   traceback      TEXT NOT NULL,      -- JSON [[file, line, qualname], ...] incl. frames not observed
