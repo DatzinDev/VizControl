@@ -2,6 +2,7 @@
 
 See docs/components/capture.md. Every callback is written so that it never raises into user code
 (except KeyboardInterrupt and friends, which must keep working) and never keeps frames alive.
+The hot paths (start/return/call) are deliberately inlined: each event costs a few hundred nanoseconds.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import sysconfig
 import threading
 import time
 import types
-from types import BuiltinFunctionType, CodeType, FunctionType, MethodType, ModuleType
+from types import BuiltinFunctionType, CodeType, FunctionType, MethodType
 
 from vizcontrol.config import Config
 from vizcontrol.serialize import Encoder, type_name
@@ -27,22 +28,30 @@ E = M.events
 DISABLE = M.DISABLE
 _now = time.perf_counter_ns
 _get_ident = threading.get_ident
+_getframe = sys._getframe
 _MISSING = object()
 _PKG_DIR = os.path.dirname(os.path.abspath(__file__)) + os.sep
 _C_DESCRIPTORS = (types.MethodDescriptorType, types.WrapperDescriptorType, types.MethodWrapperType,
                   types.ClassMethodDescriptorType)
-CO_OPTIMIZED, CO_VARARGS, CO_VARKEYWORDS, CO_GENERATOR, CO_COROUTINE, CO_ASYNC_GENERATOR = 0x01, 0x04, 0x08, 0x20, 0x80, 0x200
+CO_OPTIMIZED, CO_VARARGS, CO_VARKEYWORDS, CO_GENERATOR, CO_COROUTINE, CO_ASYNC_GENERATOR = (
+    0x01, 0x04, 0x08, 0x20, 0x80, 0x200)
 
 
 class Rec:
     """One open call on a thread's shadow stack. `frame` is id() of the frame: the callee's frame for Python
-    calls, the caller's frame for opaque calls. Records with id None are 'skipped' (beyond max_depth)."""
+    calls, the caller's frame for opaque calls. Records with id None are 'skipped' (beyond max_depth).
+    The row is written once, when the call ends, unless a flush happens while it is open (`written`)."""
 
-    __slots__ = ("id", "frame", "depth", "opaque", "callable", "expect", "code_id", "written", "parent_id",
-                 "tid", "line", "seq", "start")
+    __slots__ = ("id", "frame", "depth", "opaque", "parent_id", "tid", "code_id", "line", "seq", "start",
+                 "children", "written", "callable", "expect")
 
-    def __init__(self, id, frame, depth, opaque=False):
-        self.id, self.frame, self.depth, self.opaque = id, frame, depth, opaque
+    def __init__(self, id, frame, depth, opaque, parent_id, tid, code_id, line, seq, start):
+        self.id, self.frame, self.depth, self.opaque, self.parent_id = id, frame, depth, opaque, parent_id
+        self.tid, self.code_id, self.line, self.seq, self.start = tid, code_id, line, seq, start
+        self.children = 0
+        self.written = False
+        self.callable = None
+        self.expect = ()
 
 
 class ExcEntry:
@@ -88,8 +97,16 @@ def _excluded_prefixes() -> tuple[str, ...]:
     return tuple(os.path.abspath(p) + os.sep for p in paths if p) + (_PKG_DIR,)
 
 
+def _message(exc: BaseException) -> str:
+    """str(exc) without running user __str__ methods (on the exception or on its args)."""
+    args = BaseException.args.__get__(exc)
+    if all(type(a) in (str, int, float, bool, type(None), bytes) for a in args):
+        return BaseException.__str__(exc)
+    return ", ".join(type_name(type(a)) for a in args)
+
+
 class Tracer:
-    def __init__(self, config: Config, writer: Writer, encoder: Encoder, roots: list[str]):
+    def __init__(self, config: Config, writer: Writer, encoder: Encoder, roots: list[str], flush_every: int = 20_000):
         self.cfg = config
         self.w = writer
         self.enc = encoder
@@ -98,6 +115,7 @@ class Tracer:
         self.max_depth = config.limits.max_depth
         self.max_calls = config.limits.max_calls
         self.max_items = config.values.max_items
+        self.flush_every = flush_every
         self._roots = tuple(os.path.abspath(r) + os.sep for r in roots)
         self._excluded = _excluded_prefixes()
         self._codes: dict[CodeType, int | None] = {}
@@ -106,9 +124,10 @@ class Tracer:
         self._stacks: dict[int, list[Rec]] = {}
         self._suspended: dict[int, Rec] = {}  # frame id of a suspended generator/coroutine -> its record
         self._exc: dict[int, ExcEntry] = {}  # in-flight exceptions by id(); they don't support weakrefs
-        self._resolved: dict[int, tuple[int, type]] = {}  # id(exc) -> (row id, type), for __cause__ links
         self._caught: list[ExcEntry] = []  # caught but maybe re-raised; finalized lazily
+        self._resolved: dict[int, tuple[int, type]] = {}  # id(exc) -> (row id, type), for __cause__ links
         self._seq = iter(range(1, 1 << 62)).__next__
+        self._new_call_id = lambda: writer.new_id("call")
         self._main = _get_ident()
         self.calls = 0
         self.value_bytes = 0
@@ -150,10 +169,10 @@ class Tracer:
         for event in self._callbacks():
             M.register_callback(tool, event, None)
         M.free_tool_id(tool)
-        for stack in self._stacks.values():  # still open: left 'unfinished' (opaque ones must be written)
-            for rec in stack:
-                if rec.opaque and not rec.written:
-                    self._write_opaque(rec)
+        # calls still open (killed thread, suspended generator, the program ended inside them) stay 'unfinished'
+        for rec in [r for s in self._stacks.values() for r in s] + list(self._suspended.values()):
+            if rec.id is not None:
+                self._end(rec, None, None, "unfinished", None, 1)
         for entry in list(self._exc.values()):  # caught, or escaped the traced region (handler None)
             self._write_exc(entry, entry.handler if entry.done else None)
         self._exc.clear()
@@ -226,8 +245,9 @@ class Tracer:
         return cid
 
     def _callee(self, c) -> tuple[tuple, tuple[str, ...]] | None:
-        """Classify the target of a CALL: None if it is traced itself or builtin noise (len, list.append, ...),
-        else (code key, names of a Python callee that would make the opaque node redundant)."""
+        """Classify the target of a CALL: None if it is traced itself or a C function/method (len, re.match,
+        list.append: per-element noise whose time stays in the caller's self time), else (code key, names of a
+        Python callee that would make the opaque node redundant)."""
         t = type(c)
         if t is MethodType:
             c = c.__func__
@@ -238,47 +258,44 @@ class Tracer:
             if cid is _MISSING:
                 cid = self._code_id(code, c.__module__)
             return None if cid is not None else ((c.__module__, c.__qualname__), ())
-        if t is BuiltinFunctionType:
-            owner = c.__self__
-            if owner is None or type(owner) is ModuleType:
-                module = c.__module__
-                return None if module in (None, "builtins") else ((module, c.__qualname__), ())
-            module = type(owner).__module__
-            return None if module == "builtins" else ((module, c.__qualname__), ())
-        if t in _C_DESCRIPTORS:
-            owner = getattr(c, "__objclass__", None)
-            return None if owner is None or owner.__module__ == "builtins" else ((owner.__module__, c.__qualname__), ())
+        if t is BuiltinFunctionType or t in _C_DESCRIPTORS:
+            return None
         if isinstance(c, type):
             return None if c.__module__ == "builtins" else ((c.__module__, c.__qualname__), ("__init__", "__new__"))
         return (t.__module__, f"{t.__qualname__}.__call__"), ("__call__",)
 
-    # -- stack helpers ----------------------------------------------------------------------------------------
-    def _stack(self) -> list[Rec] | None:
+    # -- records ----------------------------------------------------------------------------------------------
+    def _new_stack(self) -> list[Rec] | None:
         tid = _get_ident()
-        stack = self._stacks.get(tid)
-        if stack is None:
-            if not self.cfg.threads and tid != self._main:
-                return None
-            stack = self._stacks[tid] = []
+        if not self.cfg.threads and tid != self._main:
+            return None
+        stack = self._stacks[tid] = []
         return stack
 
-    def _write_opaque(self, rec: Rec) -> None:
+    def _write_open(self, rec: Rec) -> None:
         rec.written = True
         self.w.add("call", (rec.id, rec.parent_id, rec.tid, rec.code_id, rec.line, rec.depth, rec.seq, None,
-                            rec.start, None, "unfinished", None, 1))
+                            rec.start, None, "unfinished", None, 1, rec.children))
 
-    def _close_opaque(self, rec: Rec, outcome: str, exact: bool) -> None:
-        seq, now = self._seq(), _now()
+    def _end(self, rec: Rec, seq, now, outcome: str, exc_id, exact: int) -> None:
         if rec.written:
-            self.w.close_call(rec.id, seq, now, outcome, None, int(exact))
+            self.w.close_call(rec.id, seq, now, outcome, exc_id, exact, rec.children)
         else:
             self.w.add("call", (rec.id, rec.parent_id, rec.tid, rec.code_id, rec.line, rec.depth, rec.seq, seq,
-                                rec.start, now, outcome, None, int(exact)))
+                                rec.start, now, outcome, exc_id, exact, rec.children))
+
+    def _flush(self, stack: list[Rec]) -> None:
+        # Open calls of this thread are written now, so a killed process still has its ancestors on disk.
+        # ponytail: other threads' open calls are written on their own flushes or at stop
+        for rec in stack:
+            if rec.id is not None and not rec.written:
+                self._write_open(rec)
+        self.w.flush()
 
     def _settle(self, stack: list[Rec], fid: int, outcome: str = "ok") -> None:
         """An event in frame `fid` means opaque calls it made earlier have returned (end time is approximate)."""
         while stack and stack[-1].opaque and stack[-1].frame == fid:
-            self._close_opaque(stack.pop(), outcome, False)
+            self._end(stack.pop(), self._seq(), _now(), outcome, None, 0)
 
     def _pop(self, stack: list[Rec], fid: int, outcome: str = "ok") -> Rec | None:
         self._settle(stack, fid, outcome)
@@ -288,8 +305,8 @@ class Tracer:
             rec = stack[i]
             if rec.frame == fid and not rec.opaque:
                 for lost in stack[i + 1:]:
-                    if lost.opaque:
-                        self._close_opaque(lost, "unfinished", False)
+                    if lost.id is not None:
+                        self._end(lost, None, None, "unfinished", None, 0)
                 del stack[i:]
                 return rec
         return None
@@ -315,42 +332,47 @@ class Tracer:
     # -- callbacks --------------------------------------------------------------------------------------------
     def _on_start(self, code, offset):
         try:
-            frame = sys._getframe(1)
+            frame = _getframe(1)
             cid = self._codes.get(code, _MISSING)
             if cid is _MISSING:
                 cid = self._code_id(code, frame.f_globals.get("__name__"))
             if cid is None:
                 return DISABLE
-            stack = self._stack()
+            stack = self._stacks.get(_get_ident())
             if stack is None:
-                return
-            back = frame.f_back
-            bid = id(back) if back is not None else None
-            if stack:  # Class() -> __init__ / obj() -> __call__: the Python callee replaces the opaque node
-                top = stack[-1]
-                if top.opaque and top.frame == bid and not top.written and code.co_name in top.expect:
-                    stack.pop()
+                stack = self._new_stack()
+                if stack is None:
+                    return
+            bid = id(frame.f_back)
             parent = stack[-1] if stack else None
-            fid = id(frame)
-            if parent is not None:
-                if parent.id is None or parent.depth + 1 > self.max_depth:
+            # Class() -> __init__, obj() -> __call__: the Python callee replaces the pending opaque node
+            if parent is not None and parent.opaque and parent.frame == bid and not parent.written \
+                    and code.co_name in parent.expect:
+                stack.pop()
+                parent = stack[-1] if stack else None
+                if parent is not None:
+                    parent.children -= 1
+            if parent is None:
+                depth, parent_id, line = 0, None, None
+            else:
+                if parent.id is None or parent.depth >= self.max_depth:
                     if parent.id is not None and "limit_depth" not in self.truncated:
                         self._gap(parent.id, "limit_depth")
-                    stack.append(Rec(None, fid, parent.depth + 1))
+                    stack.append(Rec(None, id(frame), parent.depth + 1, False, None, 0, 0, None, 0, 0))
                     return
                 if parent.opaque and not parent.written:
-                    self._write_opaque(parent)
+                    self._write_open(parent)  # it has children: it must exist before them on disk
+                parent.children += 1
+                depth, parent_id = parent.depth + 1, parent.id
+                line = frame.f_back.f_lineno if parent.frame == bid else None
             if self.calls >= self.max_calls:
-                self._gap(parent.id if parent else None, "limit_calls")
+                self._gap(parent_id, "limit_calls")
                 self._disable()
                 return
             self.calls += 1
-            rec = Rec(self.w.new_id("call"), fid, parent.depth + 1 if parent else 0)
+            rec = Rec(self._new_call_id(), id(frame), depth, False, parent_id, _get_ident(), cid, line,
+                      self._seq(), _now())
             stack.append(rec)
-            seq = self._seq()
-            line = back.f_lineno if parent is not None and back is not None and parent.frame == bid else None
-            self.w.add("call", (rec.id, parent.id if parent else None, _get_ident(), cid, line, rec.depth, seq,
-                                None, _now(), None, "unfinished", None, 1))
             if self.values:
                 n = code.co_argcount + code.co_kwonlyargcount
                 n += bool(code.co_flags & CO_VARARGS) + bool(code.co_flags & CO_VARKEYWORDS)
@@ -358,30 +380,9 @@ class Tracer:
                     local = frame.f_locals
                     for name in code.co_varnames[:n]:
                         if name in local:
-                            self._bind(rec.id, seq, "arg", name, None, local[name])
+                            self._bind(rec.id, rec.seq, "arg", name, None, local[name])
         except Exception as e:
             self._fail(e)
-
-    def _on_resume(self, code, offset):
-        try:
-            if self._codes.get(code) is None:
-                return DISABLE if code in self._codes else None
-            self._resume(id(sys._getframe(1)))
-        except Exception as e:
-            self._fail(e)
-
-    def _on_throw(self, code, offset, exc):
-        try:
-            if self._codes.get(code) is not None:
-                self._resume(id(sys._getframe(1)))
-        except Exception as e:
-            self._fail(e)
-
-    def _resume(self, fid: int) -> None:
-        rec = self._suspended.pop(fid, None)
-        stack = self._stack()
-        if rec is not None and stack is not None:
-            stack.append(rec)
 
     def _on_return(self, code, offset, retval):
         try:
@@ -390,21 +391,112 @@ class Tracer:
                 return DISABLE
             if cid is _MISSING:
                 return
-            stack = self._stack()
+            stack = self._stacks.get(_get_ident())
             if not stack:
                 return
-            frame = sys._getframe(1)
-            rec = self._pop(stack, id(frame))
-            if rec is None or rec.id is None:
+            frame = _getframe(1)
+            fid = id(frame)
+            rec = stack[-1]
+            if rec.frame == fid and not rec.opaque:
+                stack.pop()
+            else:
+                rec = self._pop(stack, fid)
+                if rec is None:
+                    return
+            if rec.id is None:
                 return
-            seq = self._seq()
+            now, seq = _now(), self._seq()
             if self.values:
                 self._bind(rec.id, seq, "return", None, frame.f_lineno, retval)
                 if self.state:
                     self._bind_locals(rec.id, frame, seq, "local")
-            self.w.close_call(rec.id, seq, _now(), "ok")
+            if rec.written:
+                self.w.close_call(rec.id, seq, now, "ok", None, 1, rec.children)
+            else:
+                self.w.add("call", (rec.id, rec.parent_id, rec.tid, rec.code_id, rec.line, rec.depth, rec.seq, seq,
+                                    rec.start, now, "ok", None, 1, rec.children))
+            if self.w.pending >= self.flush_every:
+                self._flush(stack)
         except Exception as e:
             self._fail(e)
+
+    def _on_call(self, code, offset, callable_, arg0):
+        try:
+            cid = self._codes.get(code, _MISSING)
+            frame = _getframe(1)
+            if cid is _MISSING:
+                cid = self._code_id(code, frame.f_globals.get("__name__"))
+            if cid is None:
+                return DISABLE
+            stack = self._stacks.get(_get_ident())
+            if stack is None:
+                stack = self._new_stack()
+                if stack is None:
+                    return
+            fid = id(frame)
+            if stack and stack[-1].opaque and stack[-1].frame == fid:
+                self._settle(stack, fid)
+            t = type(callable_)
+            if t is FunctionType and self._codes.get(callable_.__code__):
+                return  # fast path: a traced Python function reports itself
+            if t is BuiltinFunctionType or t in _C_DESCRIPTORS:
+                # ponytail: a site that calls C once (re.match, list.append) is assumed to always do so
+                return DISABLE
+            target = self._callee(callable_)
+            if target is None:
+                return
+            parent = stack[-1] if stack else None
+            if parent is not None and parent.id is None:
+                return
+            rec = Rec(self._new_call_id(), fid, parent.depth + 1 if parent else 0, True,
+                      parent.id if parent else None, _get_ident(), self._opaque_code_id(target[0]), frame.f_lineno,
+                      self._seq(), _now())
+            rec.callable, rec.expect = id(callable_), target[1]
+            if parent is not None:
+                parent.children += 1
+            stack.append(rec)
+        except Exception as e:
+            self._fail(e)
+
+    def _on_c_return(self, code, offset, callable_, arg0):
+        self._c_end(callable_, "ok")
+
+    def _on_c_raise(self, code, offset, callable_, arg0):
+        self._c_end(callable_, "raised")
+
+    def _c_end(self, callable_, outcome: str) -> None:
+        try:
+            stack = self._stacks.get(_get_ident())
+            if stack and stack[-1].opaque and stack[-1].callable == id(callable_) \
+                    and stack[-1].frame == id(_getframe(2)):
+                self._end(stack.pop(), self._seq(), _now(), outcome, None, 1)
+        except Exception as e:
+            self._fail(e)
+
+    def _on_resume(self, code, offset):
+        try:
+            if self._codes.get(code) is None:
+                return DISABLE if code in self._codes else None
+            self._resume(id(_getframe(1)))
+        except Exception as e:
+            self._fail(e)
+
+    def _on_throw(self, code, offset, exc):
+        try:
+            if self._codes.get(code) is not None:
+                self._resume(id(_getframe(1)))
+        except Exception as e:
+            self._fail(e)
+
+    def _resume(self, fid: int) -> None:
+        rec = self._suspended.pop(fid, None)
+        if rec is None:
+            return
+        stack = self._stacks.get(_get_ident())
+        if stack is None:
+            stack = self._new_stack()
+        if stack is not None:
+            stack.append(rec)
 
     def _on_yield(self, code, offset, value):
         try:
@@ -413,14 +505,18 @@ class Tracer:
                 return DISABLE
             if cid is _MISSING:
                 return
-            stack = self._stack()
+            stack = self._stacks.get(_get_ident())
             if not stack:
                 return
-            frame = sys._getframe(1)
+            frame = _getframe(1)
             fid = id(frame)
-            rec = self._pop(stack, fid)
-            if rec is None:
-                return
+            rec = stack[-1]
+            if rec.frame == fid and not rec.opaque:
+                stack.pop()
+            else:
+                rec = self._pop(stack, fid)
+                if rec is None:
+                    return
             self._suspended[fid] = rec  # stays open; PY_RESUME pushes it back
             if rec.id is not None and self.values:
                 self._bind(rec.id, self._seq(), "yield", None, frame.f_lineno, value)
@@ -431,18 +527,18 @@ class Tracer:
         try:
             if not self._codes.get(code):
                 return
-            stack = self._stack()
+            stack = self._stacks.get(_get_ident())
             if not stack:
                 return
-            frame = sys._getframe(1)
+            frame = _getframe(1)
             rec = self._pop(stack, id(frame), "raised")
             if rec is None or rec.id is None:
                 return
-            seq = self._seq()
+            now, seq = _now(), self._seq()
             if self.state:
                 self._bind_locals(rec.id, frame, seq, "local")
             entry = self._exc.get(id(exc))
-            self.w.close_call(rec.id, seq, _now(), "raised", entry.id if entry and entry.obj is exc else None)
+            self._end(rec, seq, now, "raised", entry.id if entry and entry.obj is exc else None, 1)
         except Exception as e:
             self._fail(e)
 
@@ -450,10 +546,10 @@ class Tracer:
         try:
             if not self._codes.get(code):
                 return
-            stack = self._stack()
+            stack = self._stacks.get(_get_ident())
             if stack is None:
                 return
-            frame = sys._getframe(1)
+            frame = _getframe(1)
             fid = id(frame)
             self._settle(stack, fid, "raised")
             entry = self._exc.get(id(exc))
@@ -478,10 +574,10 @@ class Tracer:
             entry = self._exc.get(id(exc))
             if entry is None or entry.obj is not exc:
                 return
-            stack = self._stack() or []
+            stack = self._stacks.get(_get_ident()) or []
             handler = None
             if self._codes.get(code):
-                fid = id(sys._getframe(1))
+                fid = id(_getframe(1))
                 self._settle(stack, fid, "raised")
                 handler = next((r.id for r in reversed(stack) if r.frame == fid and not r.opaque), None)
             elif stack:  # caught inside a library called from traced code
@@ -516,53 +612,3 @@ class Tracer:
                                  handled_call_id, cause_id, json.dumps(frames), entry.value_id))
         self._resolved[id(exc)] = (entry.id, type(exc))
         entry.obj = None
-
-    def _on_call(self, code, offset, callable_, arg0):
-        try:
-            cid = self._codes.get(code, _MISSING)
-            frame = sys._getframe(1)
-            if cid is _MISSING:
-                cid = self._code_id(code, frame.f_globals.get("__name__"))
-            if cid is None:
-                return DISABLE
-            stack = self._stack()
-            if stack is None:
-                return
-            fid = id(frame)
-            self._settle(stack, fid)
-            target = self._callee(callable_)
-            if target is None:
-                return
-            parent = stack[-1] if stack else None
-            if parent is not None and parent.id is None:
-                return
-            rec = Rec(self.w.new_id("call"), fid, parent.depth + 1 if parent else 0, opaque=True)
-            rec.callable, rec.expect, rec.code_id, rec.written = id(callable_), target[1], self._opaque_code_id(target[0]), False
-            rec.parent_id, rec.tid, rec.line, rec.seq, rec.start = (
-                parent.id if parent else None, _get_ident(), frame.f_lineno, self._seq(), _now())
-            stack.append(rec)
-        except Exception as e:
-            self._fail(e)
-
-    def _on_c_return(self, code, offset, callable_, arg0):
-        self._c_end(callable_, "ok")
-
-    def _on_c_raise(self, code, offset, callable_, arg0):
-        self._c_end(callable_, "raised")
-
-    def _c_end(self, callable_, outcome: str) -> None:
-        try:
-            stack = self._stacks.get(_get_ident())
-            if stack and stack[-1].opaque and stack[-1].callable == id(callable_) \
-                    and stack[-1].frame == id(sys._getframe(2)):
-                self._close_opaque(stack.pop(), outcome, True)
-        except Exception as e:
-            self._fail(e)
-
-
-def _message(exc: BaseException) -> str:
-    """str(exc) without running user __str__ methods (on the exception or on its args)."""
-    args = BaseException.args.__get__(exc)
-    if all(type(a) in (str, int, float, bool, type(None), bytes) for a in args):
-        return BaseException.__str__(exc)
-    return ", ".join(type_name(type(a)) for a in args)

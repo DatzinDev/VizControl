@@ -12,8 +12,8 @@ def write_tree(w: Writer):
     c = w.new_id("code")
     w.add("code", (c, f, "app", "main", 1, "function", 1))
     root, child = w.new_id("call"), w.new_id("call")
-    w.add("call", (root, None, 1, c, None, 0, 1, None, 10, None, "unfinished", None, 1))
-    w.add("call", (child, root, 1, c, 3, 1, 2, None, 20, None, "unfinished", None, 1))
+    w.add("call", (root, None, 1, c, None, 0, 1, None, 10, None, "unfinished", None, 1, 0))  # written while open
+    w.add("call", (child, root, 1, c, 3, 1, 2, None, 20, None, "unfinished", None, 1, 0))
     v = w.new_id("value")
     w.add("value", (v, None, "int", '{"t":"int","v":1}', 0, 0))
     w.add("binding", (child, 3, "return", None, 3, v))
@@ -22,9 +22,10 @@ def write_tree(w: Writer):
 
 
 def test_roundtrip(tmp_path):
-    w = Writer(tmp_path / "r.vizc", RUN, flush_every=2)  # small batches exercise intermediate flushes
+    w = Writer(tmp_path / "r.vizc", RUN)
     root, child = write_tree(w)
-    w.close_call(root, 5, 40, "ok")
+    w.flush()  # the close update lands in a later batch than the insert
+    w.close_call(root, 5, 40, "ok", children=1)
     w.close("ok", 0, 40, [])
     assert not (tmp_path / "r.vizc-wal").exists()
 

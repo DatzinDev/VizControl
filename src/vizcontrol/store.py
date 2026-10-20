@@ -44,17 +44,20 @@ CREATE TABLE exception (
 );
 CREATE TABLE gap (id INTEGER PRIMARY KEY, call_id INTEGER REFERENCES call(id), seq INTEGER NOT NULL,
   kind TEXT NOT NULL, detail TEXT);
-CREATE INDEX call_parent ON call(parent_id, seq_start);
-CREATE INDEX call_code ON call(code_id);
-CREATE INDEX binding_call ON binding(call_id, seq);
-CREATE INDEX value_object ON value(object_id);
+"""
+# Built on close: maintaining them during capture slows inserts. ponytail: a killed run's file has no indexes.
+INDEXES = """
+CREATE INDEX IF NOT EXISTS call_parent ON call(parent_id, seq_start);
+CREATE INDEX IF NOT EXISTS call_code ON call(code_id);
+CREATE INDEX IF NOT EXISTS binding_call ON binding(call_id, seq);
+CREATE INDEX IF NOT EXISTS value_object ON value(object_id);
 """
 
 COLUMNS = {
     "file": ("id", "path", "relpath", "sha256", "source"),
     "code": ("id", "file_id", "module", "qualname", "first_line", "kind", "observed"),
     "call": ("id", "parent_id", "thread_id", "code_id", "call_line", "depth", "seq_start", "seq_end",
-             "start_ns", "end_ns", "outcome", "exception_id", "end_exact"),
+             "start_ns", "end_ns", "outcome", "exception_id", "end_exact", "children"),
     "value": ("id", "object_id", "type", "data", "truncated", "redacted"),
     "binding": ("call_id", "seq", "kind", "name", "line", "value_id"),
     "exception": ("id", "type", "message", "raised_call_id", "raised_line", "handled_call_id", "cause_id",
@@ -62,23 +65,24 @@ COLUMNS = {
     "gap": ("id", "call_id", "seq", "kind", "detail"),
 }
 _INSERT = {t: f"INSERT INTO {t} ({', '.join(c)}) VALUES ({', '.join('?' * len(c))})" for t, c in COLUMNS.items()}
-_CLOSE = "UPDATE call SET seq_end = ?, end_ns = ?, outcome = ?, exception_id = ?, end_exact = ? WHERE id = ?"
+_CLOSE = ("UPDATE call SET seq_end = ?, end_ns = ?, outcome = ?, exception_id = ?, end_exact = ?, children = ? "
+          "WHERE id = ?")
 RUN_FIELDS = ("kind", "target", "argv", "cwd", "python", "started_wall", "started_ns", "outcome", "config")
 
 
 class Writer:
-    """Buffers rows in memory and writes them in one transaction every `flush_every` rows."""
+    """Buffers rows in memory; `flush()` writes them in one transaction. The caller decides when to flush
+    (it watches `pending`), so the hot path is a lock and an append."""
 
-    # ponytail: flush by row count only; add a flush_ms timer if idle long-running programs need fresher files
-    def __init__(self, path: str | Path, run: dict, flush_every: int = 10_000):
+    # ponytail: no time-based flush; add one if idle long-running programs need fresher files
+    def __init__(self, path: str | Path, run: dict):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.flush_every = flush_every
         self._ids = {t: itertools.count(1).__next__ for t in ("file", "code", "call", "value", "exception", "gap")}
         self._rows: dict[str, list] = {t: [] for t in COLUMNS}
         self._closes: list[tuple] = []
-        self._pending = 0
-        self._lock = threading.RLock()
+        self.pending = 0
+        self._lock = threading.Lock()
         self.db = sqlite3.connect(self.path, check_same_thread=False, isolation_level=None)
         self.db.execute("PRAGMA journal_mode = WAL")
         self.db.execute("PRAGMA synchronous = NORMAL")
@@ -94,20 +98,17 @@ class Writer:
     def add(self, table: str, row: tuple) -> None:
         with self._lock:
             self._rows[table].append(row)
-            self._pending += 1
-            if self._pending >= self.flush_every:
-                self.flush()
+            self.pending += 1
 
-    def close_call(self, call_id, seq_end, end_ns, outcome, exception_id=None, end_exact=1) -> None:
+    def close_call(self, call_id, seq_end, end_ns, outcome, exception_id=None, end_exact=1, children=0) -> None:
+        """End a call whose row was already written while it was open."""
         with self._lock:
-            self._closes.append((seq_end, end_ns, outcome, exception_id, end_exact, call_id))
-            self._pending += 1
-            if self._pending >= self.flush_every:
-                self.flush()
+            self._closes.append((seq_end, end_ns, outcome, exception_id, end_exact, children, call_id))
+            self.pending += 1
 
     def flush(self) -> None:
         with self._lock:
-            if not self._pending:
+            if not self.pending:
                 return
             self.db.execute("BEGIN")
             for table, rows in self._rows.items():
@@ -118,14 +119,14 @@ class Writer:
                 self.db.executemany(_CLOSE, self._closes)
                 self._closes.clear()
             self.db.execute("COMMIT")
-            self._pending = 0
+            self.pending = 0
 
     def close(self, outcome: str, exit_code: int | None, ended_ns: int | None, truncated: list[str]) -> None:
+        self.flush()
         with self._lock:
-            self.flush()
             self.db.execute("UPDATE run SET outcome = ?, exit_code = ?, ended_ns = ?, truncated = ? WHERE id = 1",
                             (outcome, exit_code, ended_ns, json.dumps(truncated) if truncated else None))
-            self.db.execute("UPDATE call SET children = (SELECT COUNT(*) FROM call c WHERE c.parent_id = call.id)")
+            self.db.executescript(INDEXES)
             self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             self.db.execute("PRAGMA journal_mode = DELETE")
             self.db.close()
