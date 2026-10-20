@@ -107,6 +107,7 @@ def _summary(runs: Runs, run_id: str) -> dict:
             "duration_ns": run["ended_ns"] - run["started_ns"] if run["ended_ns"] else None,
             "calls": r.counts()["call"], "truncated": run["truncated"], "level": run["config"].get("level"),
             "process_gone": run["process_gone"], "regions": r.regions(),
+            "http_status": r.meta().get("http_status"),  # runs of one request (vizcontrol.web)
             # what the viewer needs to mark cut nodes: calls at max_depth lost their children if limit_depth was hit,
             # and the call where max_calls stopped tracing
             "max_depth": run["config"].get("limits", {}).get("max_depth"),

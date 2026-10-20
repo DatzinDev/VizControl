@@ -56,7 +56,11 @@ def handle(event): ...
 - Nesting: a `trace()`/`traced` inside an active run does not start a new run. It writes a `region` row (name, the
   innermost traced call where it started, `seq` start and end) when it exits, and the run inspector lists the
   regions with a link to their call. A region still open when the process dies is not recorded.
-- `traced` on an `async def` function is Later (FR-CAP-12).
+- `scoped=True` records only what runs in the block's context and the tasks and threads it starts with a copy of
+  it. Monitoring is process-wide: without it, a block in a server would also record the other requests served
+  meanwhile. Calls whose context is not the run's are skipped at their start (and opaque calls at their call site).
+- `kind` names the run's kind (`api` by default; the HTTP middleware uses `request`).
+- `traced` on an `async def` function is Later.
 
 ### pytest plugin (FR-RUN-4)
 
@@ -77,10 +81,25 @@ pytest tests/test_orders.py --vizcontrol [--vizcontrol-level=state] [--vizcontro
 - The terminal summary prints how many tests were traced and failed, and the `vizcontrol serve <dir>` command.
 - Tracebacks start at the first traced frame, so pytest/pluggy frames don't show.
 
-### HTTP requests (FR-RUN-5, Later)
+### HTTP requests (FR-RUN-5)
 
-An ASGI middleware that wraps each request in `trace()`, enabled by sampling or a request header. It needs async
-causality (FR-CAP-12) to be meaningful, so it is roadmap.
+`src/vizcontrol/web.py`, one run per request:
+
+```python
+app.add_middleware(vizcontrol.web.ASGIMiddleware, every=1)    # FastAPI, Starlette
+app.wsgi_app = vizcontrol.web.WSGIMiddleware(app.wsgi_app)    # Flask; Django's WSGI application too
+```
+
+- A request is traced when it carries `X-VizControl`, or one in `every` (`every=1`: all; default 0: header only).
+  Other keyword arguments are config overrides (`out_dir`, `level`, ...).
+- One traced request at a time: the others run untraced while it is in flight, and the traced one is a scoped
+  run, so their calls stay out of it.
+- Run `kind = request`, `target = GET /orders/7?status=paid` with query values whose name looks secret redacted,
+  file `<time>-GET-orders-7.vizc`, and the response status in `meta.http_status` (the run list shows it). An
+  exception that escapes the app makes the run `raised`; a framework's 500 page is sent outside the middleware, so
+  that status is not recorded.
+- WSGI: a body the app streams after returning (a generator) is produced outside the run.
+- `examples/api.py` is a FastAPI service set up this way.
 
 ## Limits and failure modes
 

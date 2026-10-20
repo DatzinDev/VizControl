@@ -128,6 +128,11 @@ class Writer:
             self._rows[table].append(row)
             self.pending += 1
 
+    def set_meta(self, key: str, value: str) -> None:
+        """Run facts known only at the end, like a request's response status."""
+        with self._lock:
+            self.db.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", (key, value))
+
     def close_call(self, call_id, seq_end, end_ns, outcome, exception_id=None, end_exact=1, children=0) -> None:
         """End a call whose row was already written while it was open."""
         with self._lock:
@@ -269,6 +274,9 @@ class Reader:
         """Distinct (caller code_id, callee code_id) pairs; the caller is None for root calls."""
         return self.db.execute("SELECT DISTINCT p.code_id, call.code_id FROM call "
                                "LEFT JOIN call p ON p.id = call.parent_id").fetchall()
+
+    def meta(self) -> dict[str, str]:
+        return {r["key"]: r["value"] for r in self._all("SELECT key, value FROM meta")}
 
     def code_counts(self) -> dict[int, int]:
         """code_id -> how many calls ran it."""
