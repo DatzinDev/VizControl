@@ -135,7 +135,10 @@ class Tracer:
         self.flush_every = flush_every
         self._roots = tuple(os.path.abspath(r) + os.sep for r in roots)
         self._excluded = _excluded_prefixes()
-        self._codes: dict[CodeType, int | None] = {}
+        # id(code) -> code row id, or None if excluded. Not the code itself: equal code objects in two files (the
+        # same small function written twice) compare and hash alike. `_alive` keeps the ids from being reused.
+        self._codes: dict[int, int | None] = {}
+        self._alive: list[CodeType] = []
         self._opaque_codes: dict[tuple, int] = {}
         self._files: dict[str, int] = {}
         self._stacks: dict[int, list[Rec]] = {}
@@ -236,7 +239,7 @@ class Tracer:
         return path.startswith(self._roots)
 
     def _code_id(self, code: CodeType, module: str | None) -> int | None:
-        cid = self._codes.get(code, _MISSING)
+        cid = self._codes.get(id(code), _MISSING)
         if cid is not _MISSING:
             return cid
         cid = None
@@ -248,7 +251,8 @@ class Tracer:
             cid = self.w.new_id("code")
             self.w.add("code", (cid, self._file_id(code.co_filename), module, code.co_qualname,
                                 code.co_firstlineno, _code_kind(code), 1))
-        self._codes[code] = cid  # ponytail: keeps code objects alive; fine unless a program exec()s endlessly
+        self._codes[id(code)] = cid
+        self._alive.append(code)  # ponytail: keeps code objects alive; fine unless a program exec()s endlessly
         return cid
 
     def _file_id(self, filename: str) -> int:
@@ -286,7 +290,7 @@ class Tracer:
             t = type(c)
         if t is FunctionType:
             code = c.__code__
-            cid = self._codes.get(code, _MISSING)
+            cid = self._codes.get(id(code), _MISSING)
             if cid is _MISSING:
                 cid = self._code_id(code, c.__module__)
             if cid is not None or code.co_filename.startswith(_PKG_DIR):  # traced itself, or our own machinery
@@ -374,7 +378,7 @@ class Tracer:
     def _on_start(self, code, offset):
         try:
             frame = _getframe(1)
-            cid = self._codes.get(code, _MISSING)
+            cid = self._codes.get(id(code), _MISSING)
             if cid is _MISSING:
                 cid = self._code_id(code, frame.f_globals.get("__name__"))
             if cid is None:
@@ -446,7 +450,7 @@ class Tracer:
 
     def _on_return(self, code, offset, retval):
         try:
-            cid = self._codes.get(code, _MISSING)
+            cid = self._codes.get(id(code), _MISSING)
             if cid is None:
                 return DISABLE
             if cid is _MISSING:
@@ -488,7 +492,7 @@ class Tracer:
 
     def _on_call(self, code, offset, callable_, arg0):
         try:
-            cid = self._codes.get(code, _MISSING)
+            cid = self._codes.get(id(code), _MISSING)
             frame = _getframe(1)
             if cid is _MISSING:
                 cid = self._code_id(code, frame.f_globals.get("__name__"))
@@ -505,7 +509,7 @@ class Tracer:
             if stack and stack[-1].opaque and stack[-1].frame == fid:
                 self._settle(stack, fid)
             t = type(callable_)
-            if t is FunctionType and self._codes.get(callable_.__code__):
+            if t is FunctionType and self._codes.get(id(callable_.__code__)):
                 return  # fast path: a traced Python function reports itself
             if t is BuiltinFunctionType or t in _C_DESCRIPTORS:
                 # ponytail: a site that calls C once (re.match, list.append) is assumed to always do so
@@ -543,15 +547,15 @@ class Tracer:
 
     def _on_resume(self, code, offset):
         try:
-            if self._codes.get(code) is None:
-                return DISABLE if code in self._codes else None
+            if self._codes.get(id(code)) is None:
+                return DISABLE if id(code) in self._codes else None
             self._resume(id(_getframe(1)))
         except Exception as e:
             self._fail(e)
 
     def _on_throw(self, code, offset, exc):
         try:
-            if self._codes.get(code) is not None:
+            if self._codes.get(id(code)) is not None:
                 self._resume(id(_getframe(1)))
         except Exception as e:
             self._fail(e)
@@ -570,7 +574,7 @@ class Tracer:
 
     def _on_yield(self, code, offset, value):
         try:
-            cid = self._codes.get(code, _MISSING)
+            cid = self._codes.get(id(code), _MISSING)
             if cid is None:
                 return DISABLE
             if cid is _MISSING:
@@ -602,7 +606,7 @@ class Tracer:
 
     def _on_unwind(self, code, offset, exc):
         try:
-            if not self._codes.get(code):
+            if not self._codes.get(id(code)):
                 return
             stack = self._stacks.get(_get_ident())
             if not stack:
@@ -622,7 +626,7 @@ class Tracer:
 
     def _on_raise(self, code, offset, exc):
         try:
-            if not self._codes.get(code) or isinstance(exc, _CONTROL_FLOW):
+            if not self._codes.get(id(code)) or isinstance(exc, _CONTROL_FLOW):
                 return
             stack = self._stacks.get(_get_ident())
             if stack is None:
@@ -654,7 +658,7 @@ class Tracer:
                 return
             stack = self._stacks.get(_get_ident()) or []
             handler = None
-            if self._codes.get(code):
+            if self._codes.get(id(code)):
                 fid = id(_getframe(1))
                 self._settle(stack, fid, "raised")
                 handler = next((r.id for r in reversed(stack) if r.frame == fid and not r.opaque), None)
@@ -680,7 +684,7 @@ class Tracer:
         while tb is not None:
             co = tb.tb_frame.f_code
             # start at the first traced frame: the runner/pytest/pluggy frames above it are not the user's story
-            if (frames or self._codes.get(co)) and not co.co_filename.startswith(_PKG_DIR):
+            if (frames or self._codes.get(id(co))) and not co.co_filename.startswith(_PKG_DIR):
                 frames.append([co.co_filename, tb.tb_lineno, co.co_qualname])
             tb = tb.tb_next
         cause = exc.__cause__ or exc.__context__
