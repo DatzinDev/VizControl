@@ -8,6 +8,17 @@ Render a run as a navigable, progressive graph and let the user move from the ov
 without losing context. The viewer is a thin client. All analysis happens in the [server](server.md); the viewer
 lays out, renders and navigates. Visual concept: [UI design](../ui-design.md).
 
+## Status (v0.1)
+
+| Done | Pending |
+|---|---|
+| Shell (top bar, breadcrumbs, runs/stages/filters panel, inspector), dark and light themes from the Penpot tokens | Timeline strip |
+| Level 1 stage graph with main path. Double-click (or the stage list) reveals the stage's first call | Level 2 as module › class compound nodes: the call tree is used for Level 2 for now |
+| Level 3 call tree: lazy expansion, `×N` groups with paged members, opaque/unfinished/raised states | Data Flow and Diff tabs (disabled) |
+| Failure mode: opens on the origin, red error path, off-path dimming, exception/locals/last-changes/traceback/source | "hidden (N)" stubs for filtered nodes. The only filter today hides library leaves |
+| Level 4 value tree, object history and field-level changes | Source panel beyond the inspector excerpt |
+| ⌘K search; URL hash keeps `run` and `call` | |
+
 ## Requirements covered
 
 FR-VIZ-1..13.
@@ -71,7 +82,9 @@ click goes up one level.
 - `npm run build` in `frontend/` writes to `src/vizcontrol/viewer/static/`. A hatch build hook runs it when
   building the wheel, so `pip install vizcontrol` needs no Node.
 - No CDN, fonts bundled, so it works offline (NFR-PKG-2).
-- Dev: `vizcontrol serve --dev` proxies the API for `vite dev`.
+- Dev: run `vizcontrol serve` (port 7171) and `npm run dev` in `frontend/`. Vite proxies `/api` to it.
+- Nodes are given a fixed `width`/`height`. Without it, React Flow 12 hides re-created nodes until they are
+  measured, and a click landing in that frame falls through to the pane, which breaks double-click.
 
 ## Limits
 
