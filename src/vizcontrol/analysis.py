@@ -806,6 +806,7 @@ class Timeline:
         window = self.steps[offset:offset + limit]
         ids = sorted({cid for _, _, cid in window})
         calls = {c["id"]: c for c in reader.calls(ids)}
+        called_back = callbacks(reader, [calls[cid] for _, kind, cid in window if kind == 0])
         values: dict[tuple, list] = defaultdict(list)  # (call, seq) -> bindings made at that step
         raised: dict[int, list] = defaultdict(list)  # call -> locals where its exception was raised
         for b in reader.bindings_of(ids):
@@ -820,6 +821,8 @@ class Timeline:
                     "qualname": c["qualname"], "module": c["module"], "observed": bool(c["observed"]),
                     "line": c["call_line"], "file": c["relpath"] or c["path"], "first_line": c["first_line"],
                     "values": values.get((cid, seq), [])}
+            if kind == 0 and cid in called_back:
+                step["callback"] = called_back[cid]
             if kind == 2:
                 exc = reader.exception(c["exception_id"]) if c["exception_id"] else None
                 step["exception"] = exc and {"type": exc["type"], "message": exc["message"],
@@ -835,6 +838,10 @@ def call_graph(reader: Reader) -> dict:
     nodes, edges = reader.code_graph()
     for n in nodes:
         n["observed"] = bool(n["observed"])
+    called_back = callbacks(reader, reader.calls([e["first_call"] for e in edges]))  # an edge is as its first call
+    for e in edges:
+        cb = called_back.get(e.pop("first_call"))
+        e["callback"] = cb and {k: cb[k] for k in ("by", "via", "line") if k in cb}
     return {"nodes": nodes, "edges": edges}
 
 
@@ -844,3 +851,71 @@ def watch(reader: Reader, name: str, limit: int = 5000) -> list[dict]:
     return [{"seq": b["seq"], "call_id": b["call_id"], "qualname": b["qualname"], "kind": b["kind"],
              "preview": preview(json.loads(b["data"])), "object_id": b["object_id"], "value_id": b["value_id"],
              "type": b["type"]} for b in reader.named_bindings(name, limit)]
+
+
+def _called_by_name(qualname: str, lines: list[str]) -> bool:
+    """Whether the caller's source names the callee in a call (`clean_rows(...)`, `self.save(...)`, `Pipeline(...)`
+    for `Pipeline.__init__`). Dunder methods run by protocol (`len()`, `for`) and lambdas count as named: nothing to
+    tell apart there. The lines are the call's and the two before it, for calls written over several lines."""
+    parts = qualname.split(".")
+    name = parts[-2] if parts[-1] in ("__init__", "__new__") and len(parts) > 1 else parts[-1]
+    if (name.startswith("__") and name.endswith("__")) or name.startswith("<"):
+        return True
+    return any(re.search(rf"\b{re.escape(name)}\s*\(", line) for line in lines)
+
+
+def _find_label(d: dict, label: str, path: str) -> str | None:
+    """Where a function with this label sits inside an encoded value: `steps[1]`, `self.handlers['done'][0]`."""
+    if d.get("t") == "opaque" and d.get("label") == label:
+        return path
+    for key, child in _children(d):
+        found = _find_label(child, label, path + key)
+        if found is not None:
+            return found
+    return None
+
+
+def callbacks(reader: Reader, calls: list[dict]) -> dict[int, dict]:
+    """call id -> how it was called, for the calls of `calls` (`Reader.calls` rows) that were not called by name
+    (inferred). A library calling back (`by`: the library function), or a function called through a variable: a
+    step passed in, a handler stored on an object, a key given to sorted(). For those: the caller's source line,
+    where among the caller's arguments the function was (`via`), and the first value it was seen in (`registered`:
+    the call that received or returned it). ponytail: one scan of the value table per distinct callback."""
+    parents = {p["id"]: p for p in reader.calls(sorted({c["parent_id"] for c in calls if c["parent_id"]}))}
+    args: dict[int, list[dict]] = defaultdict(list)
+    for b in reader.bindings_of(list(parents)):
+        if b["kind"] == "arg":
+            args[b["call_id"]].append(b)
+    sources: dict[int, list[str]] = {}
+    seen: dict[str, dict | None] = {}
+    out = {}
+    for c in calls:
+        p = parents.get(c["parent_id"])
+        if p is None or c["kind"] in ("module", "class") or not c["observed"]:
+            continue
+        if not p["observed"]:
+            out[c["id"]] = {"by": f"{p['module']}.{p['qualname']}" if p["module"] else p["qualname"], "inferred": True}
+            continue
+        if c["call_line"] is None or p["file_id"] is None:
+            continue
+        if p["file_id"] not in sources:
+            sources[p["file_id"]] = (reader.source(p["file_id"]) or "").splitlines()
+        lines = sources[p["file_id"]][max(c["call_line"] - 3, 0):c["call_line"]]
+        if not lines or _called_by_name(c["qualname"], lines):
+            continue
+        label = f"{c['module']}.{c['qualname']}"
+        cb = {"line": lines[-1].split("  #")[0].strip(), "at": c["call_line"], "inferred": True}  # no trailing comment
+        for b in args[p["id"]]:
+            via = _find_label(json.loads(b["data"]), label, b["name"] or "")
+            if via is not None:
+                cb["via"] = via
+                break
+        if label not in seen:
+            first = reader.first_binding_with(f'"label":{json.dumps(label)}')
+            seen[label] = first and {
+                "call_id": first["call_id"], "qualname": first["qualname"], "seq": first["seq"], "kind": first["kind"],
+                "path": _find_label(json.loads(first["data"]), label, first["name"] or "")}
+        if seen[label]:
+            cb["registered"] = seen[label]
+        out[c["id"]] = cb
+    return out

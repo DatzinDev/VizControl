@@ -57,3 +57,68 @@ def test_call_graph_and_watch(tmp_path):
     assert [(w["qualname"], w["preview"]) for w in xs] == [("check", "1"), ("double", "1"), ("check", "2"),
                                                            ("double", "2")]
     assert xs == sorted(xs, key=lambda w: w["seq"])
+
+
+class Bus:
+    def __init__(self):
+        self.handlers = {}
+
+    def on(self, name, handler):
+        self.handlers.setdefault(name, []).append(handler)
+
+    def emit(self, name, data):
+        for handler in self.handlers[name]:
+            handler(data)
+
+
+class Sink:
+    def __init__(self):
+        self.got = []
+
+    def take(self, data):
+        self.got.append(data)
+
+
+def triple(x):
+    return x * 3
+
+
+def neg(x):
+    return -x
+
+
+def run_steps(steps, x):
+    for step in steps:
+        x = step(x)
+    return x
+
+
+def wiring():
+    bus, sink = Bus(), Sink()
+    bus.on("done", sink.take)
+    bus.emit("done", run_steps([double, triple], 2))
+    return sorted([3, 1, 2], key=neg)
+
+
+def test_callbacks_say_how_they_were_called_and_where_the_function_came_from(tmp_path):
+    with vizcontrol.trace(output=tmp_path / "cb.vizc"):
+        wiring()
+    r = Reader(tmp_path / "cb.vizc")
+    calls = r.calls([c[0] for c in r.all_calls()])
+    cb = A.callbacks(r, calls)
+    by = {}
+    for c in calls:
+        by.setdefault(c["qualname"], cb.get(c["id"]))
+    assert by["double"]["via"] == "steps[0]" and by["triple"]["via"] == "steps[1]"
+    assert by["double"]["line"] == "x = step(x)"
+    assert by["double"]["registered"]["qualname"] == "run_steps"  # the first value it was seen in
+    assert by["Sink.take"]["via"] == "self.handlers['done'][0]"  # a bound method stored on the bus
+    assert (by["Sink.take"]["registered"]["qualname"], by["Sink.take"]["registered"]["path"]) == ("Bus.on", "handler")
+    assert by["neg"]["line"] == "return sorted([3, 1, 2], key=neg)" and "via" not in by["neg"]  # given to sorted()
+    assert all(by[n] is None for n in ("wiring", "run_steps", "Bus.on", "Bus.emit", "Bus.__init__"))  # by name
+    step = next(s for s in A.Timeline(r).page(r, 0, 100)["steps"] if s["qualname"] == "triple")
+    assert step["callback"]["via"] == "steps[1]"
+    g = A.call_graph(r)
+    name = {n["code_id"]: n["qualname"] for n in g["nodes"]}
+    edges = {(name[e["source"]], name[e["target"]]): e["callback"] for e in g["edges"]}
+    assert edges[("run_steps", "double")]["via"] == "steps[0]" and edges[("wiring", "run_steps")] is None
