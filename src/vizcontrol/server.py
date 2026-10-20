@@ -85,7 +85,11 @@ def _summary(runs: Runs, run_id: str) -> dict:
     return {"id": run_id, "kind": run["kind"], "target": run["target"], "args": args, "outcome": run["outcome"],
             "exit_code": run["exit_code"], "started": run["started_wall"],
             "duration_ns": run["ended_ns"] - run["started_ns"] if run["ended_ns"] else None,
-            "calls": r.counts()["call"], "truncated": run["truncated"], "level": run["config"].get("level")}
+            "calls": r.counts()["call"], "truncated": run["truncated"], "level": run["config"].get("level"),
+            # what the viewer needs to mark cut nodes: calls at max_depth lost their children if limit_depth was hit,
+            # and the call where max_calls stopped tracing
+            "max_depth": run["config"].get("limits", {}).get("max_depth"),
+            "cut_calls": [g["call_id"] for g in r.gaps() if g["kind"] == "limit_calls" and g["call_id"] is not None]}
 
 
 def _int(q: dict, name: str, default: int | None, lo: int = 0, hi: int = 10_000) -> int | None:
