@@ -27,7 +27,10 @@ def _edge(a: str, b: str, calls: int, thick: bool = False) -> str:
 
 def stages(reader: Reader, heads: frozenset | None = None) -> str:
     """Level 1: the stages, the calls between them, the main path drawn thick."""
-    g = A.stages(reader, heads)
+    return from_stages(A.stages(reader, heads))
+
+
+def from_stages(g: dict) -> str:
     ids = {n["name"]: f"s{i}" for i, n in enumerate(g["nodes"])}
     out = ["flowchart LR"]
     for n in g["nodes"]:
@@ -41,8 +44,10 @@ def stages(reader: Reader, heads: frozenset | None = None) -> str:
 def stage(reader: Reader, name: str, heads: frozenset | None = None) -> str | None:
     """Level 2: one stage as module › class › function subgraphs, neighbouring stages as single nodes."""
     d = A.stage_detail(reader, name, heads)
-    if d is None:
-        return None
+    return None if d is None else from_detail(d)
+
+
+def from_detail(d: dict) -> str:
     out = ["flowchart TB", f"  subgraph stage {_label(d['stage'])}"]
     modules: dict[str, dict[str | None, list[dict]]] = {}
     for f in d["functions"]:

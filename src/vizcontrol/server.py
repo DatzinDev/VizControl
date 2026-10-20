@@ -174,11 +174,11 @@ def api(runs: Runs, path: str, q: dict):
     if rest in ("/stage", "/mermaid"):
         name = q.get("name", [None])[0]
         if rest == "/mermaid" and name is None:  # `vizcontrol diagram`, for the viewer's copy button
-            return {"mermaid": runs.cached(run_id, D.stages, heads)}
+            return {"mermaid": D.from_stages(runs.cached(run_id, A.stages, heads))}
         if name not in {n["name"] for n in runs.cached(run_id, A.stages, heads)["nodes"]}:  # only real stages cached
             raise NotFound(f"no stage {name!r}")
         if rest == "/mermaid":
-            return {"mermaid": runs.cached(run_id, D.stage, name, heads)}
+            return {"mermaid": D.from_detail(runs.cached(run_id, A.stage_detail, name, heads))}
         return runs.cached(run_id, A.stage_detail, name, heads)
     if rest == "/tree":
         node, code = _int(q, "node", None, 1, 1 << 62), _int(q, "code", None, 1, 1 << 62)
