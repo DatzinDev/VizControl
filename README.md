@@ -22,7 +22,7 @@ with vizcontrol.trace("checkout") as run:
 print(run.path)
 ```
 
-Requires Python 3.12+ (uses `sys.monitoring`). See [docs/](docs/README.md) for requirements and architecture.
+Requires Python 3.12+ (uses `sys.monitoring`). See [docs/](https://github.com/DatzinDev/VizControl/tree/main/docs) for requirements and architecture.
 
 ## Development
 
@@ -33,3 +33,8 @@ cd frontend && npm ci && npm run build    # viewer -> src/vizcontrol/viewer/stat
 cd frontend && npm run e2e               # drive the built viewer in headless Chrome
 uv run python benchmarks/overhead.py
 ```
+
+## License
+
+VizControl is free software, licensed under the [GNU Affero General Public License v3.0 or later](https://github.com/DatzinDev/VizControl/blob/main/LICENSE).
+© Datzin · contacto@datzin.com.mx

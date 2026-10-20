@@ -4,11 +4,33 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vizcontrol"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Observe what a Python program really does and explore it as an interactive graph."
 readme = "README.md"
 requires-python = ">=3.12"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Datzin", email = "contacto@datzin.com.mx" }]
+keywords = ["tracing", "debugging", "visualization", "call-graph", "sys.monitoring", "pytest"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Framework :: Pytest",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Debuggers",
+    "Topic :: Software Development :: Testing",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/DatzinDev/VizControl"
+Documentation = "https://github.com/DatzinDev/VizControl/tree/main/docs"
+Issues = "https://github.com/DatzinDev/VizControl/issues"
 
 [project.scripts]
 vizcontrol = "vizcontrol.cli:main"
@@ -22,6 +44,9 @@ dev = ["pytest>=8"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[tool.hatch.version]
+path = "src/vizcontrol/__init__.py"  # single source: __version__
+
 [tool.hatch.build]
 # the built viewer is git-ignored but must ship in the wheel
 artifacts = ["src/vizcontrol/viewer/static/**"]
@@ -31,4 +56,4 @@ path = "hatch_build.py"
 
 [tool.hatch.build.targets.sdist]
 include = ["src", "frontend/src", "frontend/*.json", "frontend/*.ts", "frontend/index.html", "hatch_build.py",
-           "README.md", "docs"]
+           "README.md", "LICENSE", "docs"]
