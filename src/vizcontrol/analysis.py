@@ -35,9 +35,10 @@ def call_node(c: dict, stage: str | None = None) -> dict:
 
 
 def subtree(reader: Reader, call_id: int | None = None, depth: int = 1, limit: int = 200,
-            stage_of=None) -> list[dict]:
+            stager: Stager | None = None, head: tuple | None = None) -> list[dict]:
     """Children of `call_id` (roots if None), `depth` levels deep. Siblings running the same code fold into one
-    group node (FR-ANA-3): a 10,000-iteration loop is one node until expanded with `group_members`."""
+    group node (FR-ANA-3): a 10,000-iteration loop is one node until expanded with `group_members`. With a
+    `stager`, nodes carry their stage; `head` is `stager.head_of(reader, call_id)`."""
     groups = reader.grouped_children(call_id)
     singles = [g["first_id"] for g in groups[:limit] if g["count"] == 1]
     by_id = {c["id"]: c for c in reader.calls(singles)}
@@ -50,9 +51,10 @@ def subtree(reader: Reader, call_id: int | None = None, depth: int = 1, limit: i
     for g in groups[:limit]:
         if g["count"] == 1:
             c = by_id[g["first_id"]]
-            node = call_node(c, stage_of(c["module"], c["observed"]) if stage_of else None)
+            stage, below = stager.step(c["module"], c["observed"], c["code_id"], head) if stager else (None, None)
+            node = call_node(c, stage)
             if depth > 1 and c["children"]:
-                node["items"] = subtree(reader, c["id"], depth - 1, limit, stage_of)
+                node["items"] = subtree(reader, c["id"], depth - 1, limit, stager, below)
         else:
             s = samples[g["code_id"]]
             node = {
@@ -61,7 +63,8 @@ def subtree(reader: Reader, call_id: int | None = None, depth: int = 1, limit: i
                 "outcomes": {"raised": g["raised"], "unfinished": g["unfinished"],
                              "ok": g["count"] - g["raised"] - g["unfinished"]},
                 "total_ns": g["total_ns"], "first_call_id": g["first_id"], "seq": g["first_seq"],
-                "stage": stage_of(s["module"], s["observed"]) if stage_of else None, "inferred": True,
+                "stage": stager.step(s["module"], s["observed"], g["code_id"], head)[0] if stager else None,
+                "inferred": True,
             }
         out.append(node)
     if len(groups) > limit:
@@ -98,18 +101,101 @@ def stage_namer(config: dict):
     return stage_of
 
 
+MIN_STAGES = 3  # a project in fewer module stages than this is split into the functions its entry fans out to
+
+
+class Stager:
+    """Which stage each call belongs to (inferred). By module path (`stage_namer`), except below a head function:
+    a code matched by a `module:function` rule, or, when the project has fewer than MIN_STAGES module stages, one of
+    the functions its entry fans out to, past a chain of lone callees (`main()` -> `run()`). A head's stage takes
+    the calls below it that are in the head's own module stage; other modules keep theirs."""
+
+    def __init__(self, reader: Reader):
+        config = reader.run()["config"]
+        self.namer = stage_namer(config)
+        codes = {c["id"]: c for c in reader.codes()}
+        self.heads: dict[int, tuple[str, str]] = {}  # code_id -> (its stage, the module stage it splits)
+        rules = [(s, g) for s, globs in (config.get("stages") or {}).items() for g in globs if ":" in g]
+        for c in codes.values():
+            s = next((s for s, g in rules if fnmatch.fnmatch(f"{c['module']}:{c['qualname']}", g)), None)
+            if s is not None:
+                self.heads[c["id"]] = (s, self.namer(c["module"], c["observed"]))
+        if not rules:
+            self._fan_out(reader, codes)
+
+    def _fan_out(self, reader: Reader, codes: dict[int, dict]) -> None:
+        base = {k: self.namer(c["module"], c["observed"]) for k, c in codes.items()}
+        roots = reader.roots()
+        if not roots or len({base[k] for k, c in codes.items() if c["observed"]}) >= MIN_STAGES:
+            return
+        entry = base[reader.call(roots[0]["id"])["code_id"]]
+        frontier, callees = [], defaultdict(set)
+        for caller, k in reader.code_calls():
+            if caller is None and base[k] == entry:
+                frontier.append(k)
+            elif caller is not None and base[k] == entry and codes[k]["kind"] not in ("module", "class"):
+                callees[caller].add(k)
+        seen = set(frontier)
+        while frontier:
+            lone = []
+            for caller in frontier:
+                ks = callees[caller] - seen
+                seen |= ks
+                if len(ks) == 1:
+                    lone += ks
+                else:
+                    self.heads.update((k, (codes[k]["qualname"], entry)) for k in ks)
+            frontier = lone
+
+    def step(self, module: str | None, observed, code_id: int, head: tuple | None) -> tuple[str, tuple | None]:
+        """(stage of a call, the head that applies to its callees), given the head that applies to the call."""
+        h = self.heads.get(code_id)
+        if h is not None:
+            return h[0], h
+        base = self.namer(module, observed)
+        return (head[0] if head and head[1] == base else base), head
+
+    def assign(self, rows: list[tuple]) -> dict[int, str]:
+        """call id -> stage, for `Reader.all_calls()` rows (parents come before their children)."""
+        stage: dict[int, str] = {}
+        head: dict[int, tuple | None] = {}
+        for cid, parent, _, _, _, _, module, observed, _, code_id in rows:
+            stage[cid], head[cid] = self.step(module, observed, code_id, head.get(parent))
+        return stage
+
+    def path(self, chain: list[dict]) -> list[str]:
+        """Stages of a root-first chain of calls, as `Reader.ancestors` returns it."""
+        out, head = [], None
+        for c in chain:
+            s, head = self.step(c["module"], c["observed"], c["code_id"], head)
+            out.append(s)
+        return out
+
+    def of(self, reader: Reader, c: dict) -> str:
+        if not self.heads:
+            return self.namer(c["module"], c["observed"])
+        return self.path(reader.ancestors(c["id"]))[-1]
+
+    def head_of(self, reader: Reader, call_id: int | None) -> tuple | None:
+        """The head that applies to the callees of `call_id`."""
+        head = None
+        if call_id is not None and self.heads:
+            for c in reader.ancestors(call_id):
+                head = self.step(c["module"], c["observed"], c["code_id"], head)[1]
+        return head
+
+
 def stages(reader: Reader) -> dict:
     """Stage graph for the Level-1 overview (FR-ANA-2). One pass over all calls."""
-    stage_of = stage_namer(reader.run()["config"])
     rows = reader.all_calls()
-    stage_by_call: dict[int, str] = {}
+    stage_by_call = Stager(reader).assign(rows)
     dur: dict[int, int] = {}
     child_dur: dict[int, int] = defaultdict(int)
     nodes: dict[str, dict] = {}
     edges: dict[tuple[str, str], dict] = {}
     roots: list[str] = []
     for cid, parent, start, end, outcome, seq, module, observed, kind, _ in rows:
-        stage = stage_by_call[cid] = stage_of(module, observed)
+        stage = stage_by_call[cid]
         d = dur[cid] = end - start if end is not None else 0
         n = nodes.get(stage)
         if n is None:
@@ -206,9 +292,9 @@ def stage_detail(reader: Reader, stage: str) -> dict | None:
     """Level 2 (FR-VIZ-2): one stage opened into module › class › function, one node per function (its calls
     aggregated), the calls between them, and the calls crossing the stage boundary per (caller, callee) pair.
     ponytail: every function of the stage is returned; page them if a stage ever has thousands."""
-    stage_of = stage_namer(reader.run()["config"])
     codes = {c["id"]: c for c in reader.codes()}
-    stage_by_call: dict[int, str] = {}
+    rows = reader.all_calls()
+    stage_by_call = Stager(reader).assign(rows)
     code_by_call: dict[int, int] = {}
     dur: dict[int, int] = {}
     child_dur: dict[int, int] = defaultdict(int)
@@ -217,8 +303,8 @@ def stage_detail(reader: Reader, stage: str) -> dict | None:
     incoming: dict[tuple, int] = defaultdict(int)
     outgoing: dict[tuple, int] = defaultdict(int)
     total = 0
-    for cid, parent, start, end, outcome, seq, module, observed, kind, code_id in reader.all_calls():
-        s = stage_by_call[cid] = stage_of(module, observed)
+    for cid, parent, start, end, outcome, seq, module, observed, kind, code_id in rows:
+        s = stage_by_call[cid]
         code_by_call[cid] = code_id
         d = dur[cid] = end - start if end is not None else 0
         if parent is not None:
@@ -384,7 +470,7 @@ def error_path(reader: Reader) -> dict | None:
     exc = escaped[-1]
     path = reader.ancestors(exc["raised_call_id"])
     origin = path[-1]
-    stage_of = stage_namer(reader.run()["config"])
+    stages_on_path = Stager(reader).path(path)
     locals_at_raise = [b for b in reader.bindings(origin["id"]) if b["kind"] == "raise"]
     recent = []
     for b in locals_at_raise:
@@ -402,8 +488,8 @@ def error_path(reader: Reader) -> dict | None:
     return {
         "exception": {k: exc[k] for k in ("id", "type", "message", "raised_line", "value_id")},
         "traceback": json.loads(exc["traceback"]),
-        "origin": call_node(origin, stage_of(origin["module"], origin["observed"])),
-        "path": [call_node(c, stage_of(c["module"], c["observed"])) for c in path],
+        "origin": call_node(origin, stages_on_path[-1]),
+        "path": [call_node(c, s) for c, s in zip(path, stages_on_path, strict=True)],
         "propagation": [c["id"] for c in reversed(path) if c["exception_id"] == exc["id"]],
         "locals": [_binding_view(b) for b in locals_at_raise],
         "recent_changes": recent[-5:],

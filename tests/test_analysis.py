@@ -45,6 +45,56 @@ def test_stage_rules_override_module_paths():
     assert stage_of("sqlalchemy.orm.session", False) == "sqlalchemy"
 
 
+def extract():
+    return [{"n": n} for n in range(4)]
+
+
+def clean(rows):
+    return [r for r in rows if r["n"]]
+
+
+def transform(rows):
+    return [{"n": r["n"] * 2} for r in clean(rows)]
+
+
+def load(rows):
+    return len(rows)
+
+
+def pipeline():
+    return load(transform(extract()))
+
+
+def main():
+    return pipeline()
+
+
+def test_flat_project_is_staged_by_the_functions_its_entry_fans_out_to(tmp_path):
+    with vizcontrol.trace(output=tmp_path / "flat.vizc") as t:
+        main()
+    r = Reader(t.path)
+    g = A.stages(r)
+    names = [n["name"] for n in g["nodes"]]
+    assert names[1:] == ["extract", "transform", "load"]  # main() -> pipeline() is the entry, not a stage
+    assert {(e["from"], e["to"]) for e in g["edges"]} == {(names[0], s) for s in names[1:]}
+    assert [f["qualname"] for f in A.stage_detail(r, "transform")["functions"]] == ["transform", "clean"]
+    stager = A.Stager(r)
+    [root] = A.subtree(r, None, depth=3, stager=stager)
+    [pipe] = root["items"]
+    assert {c["qualname"]: c["stage"] for c in pipe["items"]}["transform"] == "transform"
+    clean_call = next(c for c in r.all_calls() if r.call(c[0])["qualname"] == "clean")
+    assert stager.of(r, r.call(clean_call[0])) == "transform"
+    [inner] = A.subtree(r, clean_call[1], stager=stager, head=stager.head_of(r, clean_call[1]))
+    assert inner["stage"] == "transform"
+
+
+def test_function_rules_make_stages(tmp_path):
+    with vizcontrol.trace(output=tmp_path / "rule.vizc", stages={"Load": ["*:load"], "T": ["*:trans*"]}) as t:
+        main()
+    names = [n["name"] for n in A.stages(Reader(t.path))["nodes"]]
+    assert names[1:] == ["T", "Load"]  # with rules, only the rules split
+
+
 def test_subtree_groups_repeated_siblings(tmp_path):
     def item(i):
         return i
