@@ -26,7 +26,7 @@ export function DiffView({ diff, a, b, onOpen }: { diff: RunDiff; a: RunSummary;
         <span />
         <span className="chip outline"><b className="raised">B</b><span className="mono">{runLabel(b)}</span><span className={b.outcome}>{b.outcome}</span></span>
       </div>
-      {!d && <div className="empty">The two runs made the same calls{diff.summary.truncated ? " (as far as compared)" : ""}.</div>}
+      {!d && <div className="muted">The two runs made the same calls{diff.summary.truncated ? " (as far as compared)" : ""}.</div>}
       {d && d.path.map((p, i) => (
         <div key={i} className="diff-row" style={{ "--d": p.a.depth } as React.CSSProperties}>
           <Card c={p.a} side="a" onOpen={onOpen} />
@@ -48,6 +48,22 @@ export function DiffView({ diff, a, b, onOpen }: { diff: RunDiff; a: RunSummary;
             </div>
           </div>
           <div className="diff-badge">◆ First divergence · children of {d.parent ? shortName(d.parent.qualname) : "the run"}</div>
+        </>
+      )}
+      {diff.returns.length > 0 && (
+        <>
+          <div className="label" style={{ marginTop: 14 }}>Same call, different result · {diff.summary.returns_differ} · in the order they returned</div>
+          {diff.returns.map((r) => (
+            <div key={r.a} className="diff-row">
+              <button className="diff-card" onClick={() => onOpen("a", r.a)} title={`${r.qualname}\nopen this call in run A`}>
+                <span className="q">{shortName(r.qualname)}</span><span className="mono">{r.a_value}</span>
+              </button>
+              <span className="muted mono">≠</span>
+              <button className="diff-card" onClick={() => onOpen("b", r.b)} title={`${r.qualname}\nopen this call in run B`}>
+                <span className="q">{shortName(r.qualname)}</span><span className="mono">{r.b_value}</span>
+              </button>
+            </div>
+          ))}
         </>
       )}
     </div>
@@ -83,7 +99,7 @@ export function DiffInspector({ diff, onOpen }: { diff: RunDiff; onOpen: Open })
       <div className="title-lg">A ⇄ B</div>
       <Section title="Summary">
         <KV rows={[["matched", `${s.matched.toLocaleString()} calls`], ["only in A", `${s.only_a.toLocaleString()} calls`],
-          ["only in B", `${s.only_b.toLocaleString()} calls`],
+          ["only in B", `${s.only_b.toLocaleString()} calls`], ["different result", `${s.returns_differ.toLocaleString()} calls`],
           ["outcome", <span><span className={s.outcome_a}>{s.outcome_a}</span> ⇄ <span className={s.outcome_b}>{s.outcome_b}</span></span>]]} />
         {s.truncated && <div className="muted" style={{ fontSize: 12 }}>Counts cover the first 5,000 calls after the divergence.</div>}
       </Section>
@@ -107,6 +123,14 @@ export function DiffInspector({ diff, onOpen }: { diff: RunDiff; onOpen: Open })
           </div>
         </Section>
       )}
+      {diff.returns.length > 0 && (
+        <Section title={`First different result · ${shortName(diff.returns[0].qualname)}`}>
+          <div className="diff mono" style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 3 }}>
+            {diff.returns[0].changes.map((c, i) => <div key={i} className={c.op}>~ {changeText("return", c)}</div>)}
+          </div>
+          <button className="link" onClick={() => onOpen("a", diff.returns[0].a)}>Open it in A →</button>
+        </Section>
+      )}
       {d?.branch && (
         <Section title={`Branch · ${d.branch.file}`} className="box">
           <pre className="source">
@@ -125,6 +149,7 @@ export function DiffInspector({ diff, onOpen }: { diff: RunDiff; onOpen: Open })
       <div className="box dashed muted" style={{ fontSize: 12 }}>
         ┄ How it was found: both runs' calls in order, as (depth, module, function), aligned; the first block that differs
         is the divergence. Outcomes are not compared: a failing run's callers all raise and are still the same calls.
+        Results are compared on the aligned calls, object ids aside.
       </div>
     </>
   );
