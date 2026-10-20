@@ -597,12 +597,38 @@ def _args(reader: Reader, call_id: int) -> dict[str, dict]:
     return {b["name"]: json.loads(b["data"]) for b in reader.bindings(call_id) if b["kind"] == "arg"}
 
 
+_OID = re.compile(r'"oid":\d+')
+
+
+def _returns(reader: Reader) -> dict[int, tuple[int, int]]:
+    """call id -> (seq of its return, hash of the value with object ids blanked: they differ between runs).
+    ponytail: one entry per call in memory; stream both runs in order if runs of millions of calls need it."""
+    return {cid: (seq, hash(_OID.sub('"oid":0', data))) for cid, seq, data in reader.returns()}
+
+
+def _return_diffs(a: Reader, b: Reader, sa: list[dict], sb: list[dict], pairs, limit: int = 20) -> tuple[int, list]:
+    """Matched calls whose return values differ, in the order they returned in A: the first one is usually where
+    the results started to differ, the later ones (its callers) carry it along."""
+    ra, rb = _returns(a), _returns(b)
+    found = sorted((ra[sa[i]["id"]][0], i, j) for i, j in pairs
+                   if sa[i]["id"] in ra and sb[j]["id"] in rb and ra[sa[i]["id"]][1] != rb[sb[j]["id"]][1])
+    out = []
+    for _, i, j in found[:limit]:
+        va, vb = (next(json.loads(x["data"]) for x in r.bindings(c["id"]) if x["kind"] == "return")
+                  for r, c in ((a, sa[i]), (b, sb[j])))
+        out.append({"a": sa[i]["id"], "b": sb[j]["id"], "qualname": sa[i]["qualname"], "module": sa[i]["module"],
+                    "a_value": preview(va), "b_value": preview(vb), "changes": value_diff(va, vb)[:10]})
+    return len(found), out
+
+
 def compare(a: Reader, b: Reader) -> dict:
     """Why two runs took different paths (FR-ANA-7). Each run's calls in pre-order, as (depth, module, qualname), are
     aligned with difflib; the first block that is not equal is the divergence. Reported: its parent call in both
     runs, the calls only in A and only in B under it, the parent's argument differences and the source around the
     lines where the children differ, which is usually the branch that decided. Outcomes are not part of the
-    alignment: a failing run's ancestors all raise, and they are still the same calls."""
+    alignment: a failing run's ancestors all raise, and they are still the same calls. Also reported: matched calls
+    that returned something different (`returns`), which is how two runs on different inputs differ when they
+    take the same path."""
     sa, sb = _signature(a), _signature(b)
     ka, kb = ([(c["depth"], c["module"], c["qualname"]) for c in side] for side in (sa, sb))
     # The first divergence is where the common prefix ends: found in linear time. difflib only measures the middle
@@ -615,8 +641,11 @@ def compare(a: Reader, b: Reader) -> dict:
     mid_a, mid_b = ka[pre:len(ka) - suf], kb[pre:len(kb) - suf]
     capped = len(mid_a) > ALIGN_LIMIT or len(mid_b) > ALIGN_LIMIT
     ops = difflib.SequenceMatcher(None, mid_a[:ALIGN_LIMIT], mid_b[:ALIGN_LIMIT], autojunk=False).get_opcodes()
+    pairs = [(i, i) for i in range(pre)] + [(len(ka) - 1 - k, len(kb) - 1 - k) for k in range(suf)] + [
+        (pre + i1 + t, pre + j1 + t) for tag, i1, i2, j1, _ in ops if tag == "equal" for t in range(i2 - i1)]
+    returns_differ, returns = _return_diffs(a, b, sa, sb, pairs)
     summary = {
-        "matched": pre + suf + sum(i2 - i1 for tag, i1, i2, *_ in ops if tag == "equal"),
+        "matched": len(pairs), "returns_differ": returns_differ,
         "only_a": sum(i2 - i1 for tag, i1, i2, *_ in ops if tag != "equal"),
         "only_b": sum(j2 - j1 for tag, _, __, j1, j2 in ops if tag != "equal"),
         "outcome_a": a.run()["outcome"], "outcome_b": b.run()["outcome"],
@@ -624,7 +653,7 @@ def compare(a: Reader, b: Reader) -> dict:
     }
     first = next(((i1, i2, j1, j2) for tag, i1, i2, j1, j2 in ops if tag != "equal"), None)
     if first is None:
-        return {"summary": summary, "divergence": None, "inferred": True}
+        return {"summary": summary, "divergence": None, "returns": returns, "inferred": True}
     i1, i2, j1, j2 = (pre + x for x in first)  # i1 == j1 == pre: the prefix is maximal
     idx_a, idx_b = {c["id"]: i for i, c in enumerate(sa)}, {c["id"]: j for j, c in enumerate(sb)}
     # The parent of the first differing call on each side; both lie in the common prefix, where index i in A is
@@ -672,6 +701,7 @@ def compare(a: Reader, b: Reader) -> dict:
             "only_b": [{**row(c), "call_line": c["call_line"]} for c in only_b[:20]],
             "args": arg_diff, "branch": branch,
         },
+        "returns": returns,
         "inferred": True,
     }
 

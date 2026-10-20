@@ -325,6 +325,11 @@ class Reader:
                 (like, limit)),
         }
 
+    def returns(self) -> list[tuple]:
+        """(call_id, seq, data) of every return value."""
+        return self.db.execute("SELECT binding.call_id, binding.seq, value.data FROM binding "
+                               "JOIN value ON value.id = binding.value_id WHERE binding.kind = 'return'").fetchall()
+
     def top_bindings(self, call_ids: list[int], kind: str) -> list[dict]:
         """Bindings of one kind (`arg`, `return`) of the given calls, with their top-level object id."""
         if not call_ids:
