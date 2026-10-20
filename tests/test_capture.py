@@ -97,6 +97,16 @@ def test_the_same_function_in_two_files_is_two_functions(tmp_path):
     assert sorted(c["module"] for c in r.codes() if c["qualname"] == "f") == ["one", "two"]
 
 
+def test_a_package_run_with_m_keeps_its_module_name_and_exit_0_is_no_failure(tmp_path):
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "__init__.py").write_text("")
+    (tmp_path / "pkg" / "__main__.py").write_text("import sys\n\n\ndef main():\n    return 0\n\n\nsys.exit(main())\n")
+    subprocess.run([sys.executable, "-m", "vizcontrol", "run", "-o", "p.vizc", "-m", "pkg"], cwd=tmp_path, timeout=60)
+    r = Reader(tmp_path / "p.vizc")
+    assert {c["module"] for c in r.codes() if c["qualname"] == "main"} == {"pkg.__main__"}  # as tests import it
+    assert r.run()["outcome"] == "ok" and A.error_path(r) is None  # SystemExit(0) escaped, nothing failed
+
+
 def test_script_failure(tmp_path):
     proc, r = run_cli(tmp_path, "checkout.py", "vip")
     assert proc.returncode == 1
