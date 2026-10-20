@@ -225,6 +225,31 @@ export interface ObjectSummary {
   first_seq: number;
 }
 
+export interface DiffCall {
+  id: number;
+  module: string | null;
+  qualname: string;
+  outcome: Outcome;
+  duration_ns: number | null;
+  depth: number;
+  call_line?: number | null;
+}
+
+/** Two runs aligned: where they split and why (FR-ANA-7). */
+export interface RunDiff {
+  summary: { matched: number; only_a: number; only_b: number; outcome_a: Outcome; outcome_b: Outcome; truncated: boolean };
+  divergence: {
+    parent_a: number | null;
+    parent_b: number | null;
+    parent: { qualname: string; module: string | null; file: string | null; line: number | null } | null;
+    path: { a: DiffCall; b: DiffCall }[];
+    only_a: DiffCall[];
+    only_b: DiffCall[];
+    args: { name: string; same: boolean; a: string | null; b: string | null; changes: Diff[] }[];
+    branch: { file: string; first: number; lines: string[]; a_lines: number[]; b_lines: number[] } | null;
+  } | null;
+}
+
 export interface Hit {
   kind: "function" | "variable" | "value";
   label: string;
@@ -268,5 +293,6 @@ export const api = {
   objects: (r: string) => get<ObjectSummary[]>(`${run(r)}/objects`),
   error: (r: string) => get<ErrorPath | null>(`${run(r)}/error`),
   source: (r: string, fileId: number) => get<Source>(`${run(r)}/source/${fileId}`),
+  compare: (a: string, b: string) => get<RunDiff>(`/api/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`),
   search: (r: string, q: string) => get<Hit[]>(`${run(r)}/search?q=${encodeURIComponent(q)}`),
 };
