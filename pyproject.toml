@@ -39,7 +39,20 @@ vizcontrol = "vizcontrol.cli:main"
 vizcontrol = "vizcontrol.pytest_plugin"
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "ruff==0.17.1"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["frontend"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "S"]  # S: bandit security checks
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S603", "S607", "S108", "S310"]  # asserts, subprocesses, temp paths, local http in tests
+# SQL text is built only from the schema's constant identifiers; every value is a bound parameter
+"src/vizcontrol/store.py" = ["S608"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

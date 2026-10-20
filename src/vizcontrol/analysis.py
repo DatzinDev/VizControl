@@ -13,7 +13,6 @@ from collections import defaultdict
 from vizcontrol.serialize import preview
 from vizcontrol.store import Reader
 
-
 # -- nodes --------------------------------------------------------------------------------------------------------
 
 def _duration(c: dict) -> int | None:

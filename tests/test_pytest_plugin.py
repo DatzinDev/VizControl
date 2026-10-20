@@ -82,7 +82,8 @@ def test_one_run_per_test_with_outcomes(project):
 
 def test_fixtures_option_traces_setup(project):
     out = project.path / "traces"
-    project.runpytest_subprocess("--vizcontrol", "--vizcontrol-fixtures", "--vizcontrol-dir", str(out), "-k", "test_price")
+    project.runpytest_subprocess("--vizcontrol", "--vizcontrol-fixtures", "--vizcontrol-dir", str(out),
+                                 "-k", "test_price")
     [run] = runs_by_test(out).values()
     assert {c["qualname"] for c in run.children(None)} >= {"cart", "test_price"}
 
