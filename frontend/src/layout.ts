@@ -39,11 +39,12 @@ export interface TreeBox {
   children?: TreeBox[];
 }
 
-/** Layered layout of nested boxes (Level 2: stage › module › class › function). Edges may cross levels.
+/** Layered layout of nested boxes (module › function). Edges may cross levels.
  *  Positions are relative to the parent box, as React Flow sub-flows expect; compound boxes also get their size. */
 export async function layoutTree(
   roots: TreeBox[],
   edges: { id: string; source: string; target: string }[],
+  direction: "DOWN" | "RIGHT" = "DOWN",
 ): Promise<Map<string, { x: number; y: number; width: number; height: number }>> {
   // a compound box must not carry width/height keys at all: elk fails on `undefined` sizes
   const toElk = (b: TreeBox): object =>
@@ -54,7 +55,7 @@ export async function layoutTree(
     id: "root",
     layoutOptions: {
       "elk.algorithm": "layered",
-      "elk.direction": "DOWN",  // calls go down the class boxes, as in the S2 design; a stage is wide enough already
+      "elk.direction": direction,
       "elk.hierarchyHandling": "INCLUDE_CHILDREN",
       "elk.layered.spacing.nodeNodeBetweenLayers": "56",
       "elk.spacing.nodeNode": "22",
