@@ -31,13 +31,16 @@ def stages(reader: Reader, heads: frozenset | None = None) -> str:
 
 
 def from_stages(g: dict) -> str:
-    ids = {n["name"]: f"s{i}" for i, n in enumerate(g["nodes"])}
+    """The standard library is left out unless it raised, as in the viewer's overview."""
+    shown = [n for n in g["nodes"] if not n["stdlib"] or n["raised"]]
+    ids = {n["name"]: f"s{i}" for i, n in enumerate(shown)}
     out = ["flowchart LR"]
-    for n in g["nodes"]:
+    for n in shown:
         cls = ":::raised" if n["raised"] else "" if n["observed"] else ":::library"
         out.append(f"  {ids[n['name']]}{_label(n['name'], f"{_calls(n['calls'])} · {_ms(n['total_ns'])}")}{cls}")
     main = set(zip(g["main_path"], g["main_path"][1:], strict=False))
-    out += [_edge(ids[e["from"]], ids[e["to"]], e["calls"], (e["from"], e["to"]) in main) for e in g["edges"]]
+    out += [_edge(ids[e["from"]], ids[e["to"]], e["calls"], (e["from"], e["to"]) in main) for e in g["edges"]
+            if e["from"] in ids and e["to"] in ids]
     return "\n".join(out + _STYLES) + "\n"
 
 

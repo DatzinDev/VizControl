@@ -10,6 +10,7 @@ import difflib
 import fnmatch
 import json
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -289,14 +290,18 @@ def stages(reader: Reader, heads: frozenset | None = None, depth: int | None = N
     for n in nodes.values():
         n["modules"] = sorted(m for m in n["modules"] if m)
         del n["first_call_is_import"]
+        # json, re, functools...: an overview hides them unless they raised; third-party libraries stay
+        n["stdlib"] = not n["observed"] and n["name"] in sys.stdlib_module_names
     return {"nodes": sorted(nodes.values(), key=lambda n: n["first_seq"]),
             "edges": sorted(edges.values(), key=lambda e: e["first_seq"]),
-            "main_path": _main_path(roots, edges), "inferred": True}
+            "main_path": _main_path(roots, edges, {n["name"] for n in nodes.values() if n["stdlib"]}),
+            "inferred": True}
 
 
-def _main_path(roots: list[str], edges: dict[tuple[str, str], dict]) -> list[str]:
+def _main_path(roots: list[str], edges: dict[tuple[str, str], dict], skip: set[str]) -> list[str]:
     """From the entry stage, keep following the outgoing edge that leads to the most calls (its subtree size; time
-    only breaks ties) to a stage not yet on the path. Call counts are deterministic, timings are noise in small runs."""
+    only breaks ties) to a stage not yet on the path nor in `skip` (the standard library). Call counts are
+    deterministic, timings are noise in small runs."""
     if not roots:
         return []
     out: dict[str, list[dict]] = defaultdict(list)
@@ -304,7 +309,7 @@ def _main_path(roots: list[str], edges: dict[tuple[str, str], dict]) -> list[str
         out[e["from"]].append(e)
     path = [roots[0]]
     while True:
-        nxt = [e for e in out[path[-1]] if e["to"] not in path]
+        nxt = [e for e in out[path[-1]] if e["to"] not in path and e["to"] not in skip]
         if not nxt:
             return path
         path.append(max(nxt, key=lambda e: (e["calls_below"], e["total_ns"], -e["first_seq"]))["to"])
@@ -341,7 +346,8 @@ def route_map(graphs: dict[str, dict], outcomes: dict[str, str]) -> dict:
                        "edges": [[e["from"], e["to"]] for e in g["edges"]]})
     for m in nodes.values():
         m["modules"] = sorted(m["modules"])
-    main = _main_path(sorted(entries, key=lambda s: -entries[s]), edges)  # from the most common entry
+    main = _main_path(sorted(entries, key=lambda s: -entries[s]), edges,  # from the most common entry
+                      {n["name"] for n in nodes.values() if n["stdlib"]})
     ns, es = sorted(nodes.values(), key=lambda n: n["order"]), sorted(edges.values(), key=lambda e: e["order"])
     for x in ns + es:
         del x["order"]

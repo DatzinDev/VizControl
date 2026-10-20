@@ -15,7 +15,8 @@ def test_stages_and_main_path(runs):
     g = A.stages(runs["basic"])
     assert g["inferred"] and g["main_path"][:3] == ["checkout", "app.api", "app.services"]
     nodes = {n["name"]: n for n in g["nodes"]}
-    assert nodes["json"]["observed"] is False  # library stage, grouped under its top package
+    assert nodes["json"]["observed"] is False and nodes["json"]["stdlib"]  # library stage, under its top package
+    assert not any(nodes[s]["stdlib"] for s in g["main_path"])
     first = runs["basic"].call(nodes["app.services"]["first_call"])
     assert first["module"] == "app.services" and first["kind"] not in ("module", "class")  # not the import
     assert nodes["app.services"]["self_ns"] <= nodes["app.services"]["total_ns"]

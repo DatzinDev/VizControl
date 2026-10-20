@@ -7,7 +7,8 @@ def test_level_1_and_2_as_mermaid(runs_dir):
     r = Reader(runs_dir / "vip.vizc")
     l1 = diagram.stages(r)
     assert l1.startswith("flowchart LR\n") and "classDef raised" in l1
-    assert '["app.pricing<br/>' in l1 and ":::raised" in l1 and ":::library" in l1  # json is a library stage
+    assert '["app.pricing<br/>' in l1 and ":::raised" in l1
+    assert "decimal" not in l1  # the standard library is left out unless it raised
     assert "==>" in l1  # the main path
     l2 = diagram.stage(r, "app.services")
     assert l2.startswith("flowchart TB\n") and 'subgraph stage ["app.services"]' in l2
