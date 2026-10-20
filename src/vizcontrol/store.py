@@ -245,6 +245,16 @@ class Reader:
             "WHERE value.data LIKE ? OR value.data LIKE ? ORDER BY binding.seq",
             (f'%"oid":{object_id},%', f'%"oid":{object_id}}}%'))
 
+    def objects(self, limit: int = 50) -> list[dict]:
+        """Objects bound at the top level, most seen first, named after their first binding that isn't `self`."""
+        return self._all(
+            "SELECT value.object_id, value.type, COUNT(*) AS count, MIN(binding.seq) AS first_seq, "
+            "(SELECT b.name FROM binding b JOIN value v ON v.id = b.value_id WHERE v.object_id = value.object_id "
+            "AND b.name IS NOT NULL AND b.name != 'self' ORDER BY b.seq LIMIT 1) AS name "
+            "FROM binding JOIN value ON value.id = binding.value_id "
+            "WHERE value.object_id IS NOT NULL AND value.data NOT LIKE '{\"t\":\"opaque\"%' "
+            "GROUP BY value.object_id ORDER BY count DESC, first_seq LIMIT ?", (limit,))
+
     def search(self, text: str, limit: int = 100) -> dict[str, list[dict]]:
         like = f"%{text}%"
         return {

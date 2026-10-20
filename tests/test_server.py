@@ -73,6 +73,9 @@ def test_error_and_objects(base):
     rule = next(b for b in err["locals"] if b["name"] == "rule")
     _, flow = api(base, f"/api/runs/nested%2Fvip.vizc/objects/{rule['object_id']}")
     assert flow["changes"][-1]["changes"][0]["after"] == "120"
+    _, top5 = api(base, "/api/runs/nested%2Fvip.vizc/objects?limit=5")
+    _, objs = api(base, "/api/runs/nested%2Fvip.vizc/objects")
+    assert len(top5) == 5 and rule["object_id"] in [o["object_id"] for o in objs]
     _, none = api(base, "/api/runs/basic.vizc/error")
     assert none is None
 
