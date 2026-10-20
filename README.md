@@ -6,6 +6,7 @@ The graph comes from runtime evidence, not from a model's guess about the code.
 ```
 pip install vizcontrol
 vizcontrol run app.py --some-flag     # writes .vizcontrol/runs/<time>-app.vizc
+pytest --vizcontrol                   # or: one trace per test
 vizcontrol serve                      # explore the runs in the browser
 vizcontrol info .vizcontrol/runs/<file>.vizc
 ```

@@ -31,7 +31,7 @@ CREATE TABLE run (
   started_wall   TEXT NOT NULL,      -- ISO 8601 UTC
   started_ns     INTEGER NOT NULL,
   ended_ns       INTEGER,            -- NULL while running / unfinished
-  outcome        TEXT NOT NULL,      -- running | ok | raised | assertion_failed | unfinished
+  outcome        TEXT NOT NULL,      -- running | ok | raised | assertion_failed | skipped | unfinished
   exit_code      INTEGER,
   config         TEXT NOT NULL,      -- JSON, effective capture config
   truncated      TEXT                -- JSON list of limits hit, NULL if none

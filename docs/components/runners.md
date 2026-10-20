@@ -57,21 +57,24 @@ def handle(event): ...
   be found in the viewer.
 - `traced` on an `async def` function is Later (FR-CAP-12).
 
-### pytest plugin (FR-RUN-4, Should)
+### pytest plugin (FR-RUN-4)
 
-Registered through the `pytest11` entry point, inactive unless `--vizcontrol` is passed:
+`src/vizcontrol/pytest_plugin.py`, registered through the `pytest11` entry point, inactive unless `--vizcontrol` is
+passed:
 
 ```
-pytest tests/test_orders.py::test_checkout --vizcontrol [--vizcontrol-level=state]
+pytest tests/test_orders.py --vizcontrol [--vizcontrol-level=state] [--vizcontrol-fixtures] [--vizcontrol-dir DIR]
 ```
 
-- One run per test item. The tracer starts in `pytest_runtest_call` (test body only, not fixtures). An option
-  `--vizcontrol-fixtures` includes setup/teardown.
-- Outcome: passed → `ok`, `AssertionError` → `assertion_failed` with the assertion exception linked, other errors
-  → `raised`. The assertion line becomes the failure point in the viewer, which covers logical errors that raise no
-  exception of their own (vision §6).
-- `run.target` is the test node id. Files go to `.vizcontrol/runs/pytest-<session>/`.
-- At session end the plugin prints the run directory and the `vizcontrol serve` command.
+- One run per test item (`kind = pytest`, `target` = node id). By default the tracer wraps `pytest_runtest_call`
+  (test body only). `--vizcontrol-fixtures` wraps the whole `pytest_runtest_protocol`, so fixture setup/teardown
+  are traced too and the outcome is the worst of the three phases.
+- Outcome: passed → `ok`, `AssertionError` → `assertion_failed`, `pytest.skip` → `skipped`, other errors →
+  `raised`. pytest catches the exception in untraced frames, so it is recorded as escaped and its `assert` line
+  becomes the failure point in the viewer. This covers logical errors that raise nothing of their own (vision §6).
+- Files go to `<out_dir>/pytest-<time>/NNNN-<node id>.vizc` (relative to pytest's rootdir), or `--vizcontrol-dir`.
+- The terminal summary prints how many tests were traced and failed, and the `vizcontrol serve <dir>` command.
+- Tracebacks start at the first traced frame, so pytest/pluggy frames don't show.
 
 ### HTTP requests (FR-RUN-5, Later)
 
