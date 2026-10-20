@@ -5,7 +5,8 @@ The graph comes from runtime evidence, not from a model's guess about the code.
 
 ```
 pip install vizcontrol
-vizcontrol run app.py --some-flag     # writes .vizcontrol/runs/<time>-app.vizc
+vizcontrol run --serve app.py --flag # trace app.py, then open the run in the browser
+vizcontrol run app.py --flag          # or only write .vizcontrol/runs/<time>-app.vizc
 pytest --vizcontrol                   # or: one trace per test
 vizcontrol serve                      # explore the runs in the browser
 vizcontrol diagram <run>.vizc         # the run's stages as a Mermaid flowchart

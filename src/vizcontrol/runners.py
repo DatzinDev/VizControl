@@ -215,6 +215,9 @@ def _execute(run: Run, target) -> int:
             signal.signal(signal.SIGTERM, previous)
     if error is not None and not isinstance(error, (SystemExit, _Terminated)):
         _print_user_traceback(error)
+    if not run.tracer.calls:
+        print("vizcontrol: nothing was traced: none of the code that ran is under the current directory or the "
+              "script's. To trace an installed package, add --include 'package.*'", file=sys.stderr)
     print(f"vizcontrol: trace written to {run.path}", file=sys.stderr)
     return code
 

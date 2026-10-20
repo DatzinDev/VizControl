@@ -20,11 +20,11 @@ vizcontrol run [options] -m module [args...]      # FR-RUN-2
     --out-dir DIR            default .vizcontrol/runs
     --level {calls,values,state}
     --include GLOB  --exclude GLOB   (repeatable)
-    --open                           serve and open the viewer when the run ends (with `serve`)
+    --serve                          when the run ends, serve its directory and open the browser on it
     --config FILE                    explicit config file
 
 vizcontrol serve [PATH]     # file or directory, default .vizcontrol/runs
-    --port N  --host H  --no-browser  --dev
+    --port N  --host H  --no-browser
 
 vizcontrol ls [DIR]         # table of runs: time, target, outcome, duration, calls
 vizcontrol info FILE        # run metadata, config, truncation, counts per table
@@ -33,7 +33,13 @@ vizcontrol diff A.vizc B.vizc             # first divergence (path, calls on eac
                                           # the calls that returned something else; exit 0 same, 1 differ, 2 error
 ```
 
-Everything after the script path (or `-m module`) belongs to the target program, the same as with `python`.
+Everything after the script path (or `-m module`) belongs to the target program, the same as with `python`:
+`vizcontrol run --serve app.py`, not `vizcontrol run app.py --serve`.
+
+When the run ends, `run` prints where the trace was written and how to open it (`vizcontrol serve`, with the
+directory when it is not the default one). If nothing at all was traced, it says so: none of the code that ran was
+under the current directory or the script's (an installed package run with `-m`), and `--include 'package.*'`
+traces it.
 
 ## Exit codes
 
