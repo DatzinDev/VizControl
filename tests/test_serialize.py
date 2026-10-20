@@ -93,3 +93,8 @@ def test_safe_repr_custom_and_exceptions():
 def test_preview():
     data, _ = enc({"id": 501, "status": "paid", "items": [1, 2, 3]})
     assert preview(data) == "{'id': 501, 'status': 'paid', 'items': [1, 2, 3]}"
+
+
+def test_node_budget():
+    data, r = enc([[i] for i in range(40)], max_nodes=10, max_items=50)
+    assert sum(1 for i in data["items"] if i["t"] == "trunc") == 31 and r.truncated

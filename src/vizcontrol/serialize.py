@@ -40,6 +40,7 @@ OPAQUE = (
     types.MethodDescriptorType, types.WrapperDescriptorType, types.MethodWrapperType, weakref.ref, io.IOBase,
 )
 
+_SCALARS = {type(None): "none", bool: "bool", int: "int", float: "float"}
 _CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _registry: dict[type, Callable[[Any], Any]] = {}
 
@@ -70,6 +71,7 @@ class Encoder:
     def __init__(self, config: Config):
         v, r = config.values, config.redact
         self.max_depth, self.max_items, self.max_str, self.max_bytes = v.max_depth, v.max_items, v.max_str, v.max_value_bytes
+        self.max_nodes = v.max_nodes
         self.safe_names = set(v.safe_repr_types)
         names = (DEFAULT_REDACT_NAMES if r.defaults else ()) + tuple(r.names)
         # Rules match whole name segments: "access_token" and "X-Api-Key" match, "author" and "tokens" don't.
@@ -79,6 +81,8 @@ class Encoder:
         self._hook = load_callable(r.hook) if r.hook else None
         self._by_name = {name: load_callable(spec) for name, spec in v.serializers.items()}
         self._oids: dict[int, tuple[int, Any]] = {}
+        self._kinds: dict[type, str] = {}
+        self._name_hits: dict[str, bool] = {}
         self._next_oid = itertools.count(1).__next__
 
     # -- identity ---------------------------------------------------------------------------------------------
@@ -102,9 +106,10 @@ class Encoder:
     def redact_name(self, name: str | None, obj=None) -> bool:
         if name is None:
             return False
-        if self._name_re is not None and self._name_re.search(_CAMEL.sub("_", name)):
-            return True
-        return bool(self._hook and self._hook(name, obj))
+        hit = self._name_hits.get(name)
+        if hit is None:
+            hit = self._name_hits[name] = bool(self._name_re and self._name_re.search(_CAMEL.sub("_", name)))
+        return hit or bool(self._hook and self._hook(name, obj))
 
     def scrub(self, text: str) -> tuple[str, bool]:
         if self._value_re is None:
@@ -115,6 +120,7 @@ class Encoder:
     # -- encoding ---------------------------------------------------------------------------------------------
     def encode(self, obj, name: str | None = None) -> Encoded:
         self._truncated = self._redacted = False
+        self._budget = self.max_nodes
         seen: dict[int, int] = {}
         try:
             data = self._enc(obj, 0, name, seen)
@@ -125,25 +131,55 @@ class Encoder:
             data = {"t": "trunc", "type": type_name(type(obj))}
             text = json.dumps(data)
             self._truncated = True
-        oid = data.get("oid") if isinstance(data, dict) else None
-        return Encoded(text, oid, type_name(type(obj)), self._truncated, self._redacted)
+        return Encoded(text, data.get("oid"), type_name(type(obj)), self._truncated, self._redacted)
+
+    def _classify(self, t: type) -> str:
+        """How values of type `t` are encoded. Computed once per type: isinstance chains are the hot spot."""
+        if t in _SCALARS:
+            return _SCALARS[t]
+        if issubclass(t, str):
+            return "str"
+        if issubclass(t, (bytes, bytearray)):
+            return "bytes"
+        if t in SAFE_REPR or type_name(t) in self.safe_names:
+            return "repr"
+        if issubclass(t, enum.Enum):
+            return "enum"
+        if issubclass(t, OPAQUE):
+            return "opaque"
+        if issubclass(t, dict):
+            return "dict"
+        if issubclass(t, (list, set)):
+            return "seq"
+        if issubclass(t, (tuple, frozenset)):
+            return "tuple"
+        return "obj"
 
     def _enc(self, obj, depth: int, name: str | None, seen: dict[int, int]) -> dict:
         if name is not None and self.redact_name(name, obj):
             self._redacted = True
             return {"t": "redacted"}
         t = type(obj)
-        if obj is None:
+        if _registry or self._by_name:
+            fn = _registry.get(t) or self._by_name.get(type_name(t))
+            if fn is not None:
+                return {"t": "custom", "type": type_name(t), "v": fn(obj)}
+        kind = self._kinds.get(t)
+        if kind is None:
+            kind = self._kinds[t] = self._classify(t)
+        if kind == "int":
+            return {"t": "int", "v": obj if -(2**53) < obj < 2**53 else str(obj)}
+        if kind == "str":
+            return self._str(obj if t is str else str.__getitem__(obj, slice(None)))
+        if kind == "none":
             return {"t": "none"}
-        if t is bool:
+        if kind == "bool":
             return {"t": "bool", "v": obj}
-        if t is int:
-            return {"t": "int", "v": obj if abs(obj) < 2**53 else str(obj)}
-        if t is float:
+        if kind == "float":
             return {"t": "float", "v": obj if math.isfinite(obj) else str(obj)}
-        if isinstance(obj, str):
-            return self._str(str.__getitem__(obj, slice(None)) if t is not str else obj)
-        if isinstance(obj, (bytes, bytearray)):
+        if kind == "repr":
+            return {"t": "repr", "type": type_name(t), "v": repr(obj)}
+        if kind == "bytes":
             n = len(obj)
             out = {"t": "bytes", "v": base64.b64encode(bytes(obj[: self.max_str])).decode()}
             if t is bytearray:
@@ -152,17 +188,16 @@ class Encoder:
                 out["len"] = n
                 self._truncated = True
             return out
-        fn = _registry.get(t) or (self._by_name.get(type_name(t)) if self._by_name else None)
-        if fn is not None:
-            return {"t": "custom", "type": type_name(t), "v": fn(obj)}
-        if t in SAFE_REPR or (self.safe_names and type_name(t) in self.safe_names):
-            return {"t": "repr", "type": type_name(t), "v": repr(obj)}
-        if isinstance(obj, enum.Enum):
+        if kind == "enum":
             return {"t": "repr", "type": type_name(t), "v": f"{t.__qualname__}.{object.__getattribute__(obj, '_name_')}"}
-        if isinstance(obj, OPAQUE):
+        if kind == "opaque":
             return self._opaque(obj)
 
-        mutable = not isinstance(obj, (tuple, frozenset))
+        self._budget -= 1
+        if self._budget < 0:
+            self._truncated = True
+            return {"t": "trunc", "type": type_name(t)}
+        mutable = kind != "tuple"
         if mutable:
             oid = self.object_id(obj)
             if id(obj) in seen:
@@ -172,18 +207,18 @@ class Encoder:
             self._truncated = True
             return {"t": "trunc", "type": type_name(t), **({"oid": oid} if mutable else {})}
 
-        if isinstance(obj, dict):
+        if kind == "dict":
             out = {"t": "dict", "items": [
-                [self._enc(k, depth + 1, None, seen), self._enc(v, depth + 1, k if isinstance(k, str) else None, seen)]
+                [self._enc(k, depth + 1, None, seen), self._enc(v, depth + 1, k if type(k) is str else None, seen)]
                 for k, v in itertools.islice(dict.items(obj), self.max_items)]}
             n = dict.__len__(obj)
-        elif isinstance(obj, (list, tuple, set, frozenset)):
-            base = list if isinstance(obj, list) else tuple if isinstance(obj, tuple) else set if isinstance(obj, set) else frozenset
+        elif kind == "obj":
+            return self._object(obj, t, depth, seen)
+        else:
+            base = (list if issubclass(t, list) else set) if mutable else (tuple if issubclass(t, tuple) else frozenset)
             out = {"t": base.__name__, "items": [
                 self._enc(v, depth + 1, None, seen) for v in itertools.islice(base.__iter__(obj), self.max_items)]}
             n = base.__len__(obj)
-        else:
-            return self._object(obj, t, depth, seen)
         if t not in (dict, list, tuple, set, frozenset):
             out["type"] = type_name(t)
         if mutable:

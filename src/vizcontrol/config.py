@@ -20,10 +20,11 @@ class Limits:
 
 @dataclass(frozen=True)
 class Values:
-    max_depth: int = 4
-    max_items: int = 50
-    max_str: int = 500
+    max_depth: int = 3
+    max_items: int = 20
+    max_str: int = 200
     max_value_bytes: int = 64 * 1024
+    max_nodes: int = 100  # per encoded value: bounds the cost of every binding
     safe_repr_types: tuple[str, ...] = ()
     serializers: dict[str, str] = field(default_factory=dict)  # "pkg.Type" -> "pkg.module:function"
 
