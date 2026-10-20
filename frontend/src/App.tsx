@@ -454,7 +454,8 @@ export function App() {
               <>
                 <div className="hint">Stage {detail.stage} opened · modules › classes › functions · click a function to open its first call</div>
                 <CopyMermaid runId={runId!} stage={detail.stage} />
-                <ComponentView detail={detail} onOpenStage={showStage} onOpenCall={openCall} stopped={error?.origin.code_id} />
+                <ComponentView key={detail.stage} detail={detail} onOpenStage={showStage} onOpenCall={openCall} stopped={error?.origin.code_id}
+                  hidden={showStdlib ? undefined : new Set(stages?.nodes.filter((s) => s.stdlib && !s.raised).map((s) => s.name))} />
               </>
             ) : <div className="empty">Loading…</div>
           )}

@@ -4,6 +4,7 @@ import puppeteer from "puppeteer-core";
 
 const base = process.argv[2] ?? "http://127.0.0.1:7171/";
 const flatBase = process.argv[3];  // examples/pipeline.py, a one-file project
+const bigBase = process.argv[4];  // a package of 13 modules
 const browser = await puppeteer.launch({
   executablePath: process.env.CHROME_PATH ?? "/usr/bin/google-chrome",
   headless: true,
@@ -225,6 +226,21 @@ if (flatBase) await check("a one-file project is staged by its functions, and it
   expect((await text(".stage.stopped .name")) === "clean", "the stopped stage is not clean");
   const ghosts = await page.$$eval(".stage.ghost .name", (ns) => ns.map((n) => n.textContent));
   expect(ghosts.includes("enrich") && ghosts.includes("summarize"), `not reached: ${ghosts.join(", ")}`);
+});
+
+if (bigBase) await check("a package of many modules is one stage, opened on its modules", async () => {
+  await page.goto(`${bigBase}#run=main.vizc`, { waitUntil: "networkidle0" });
+  await wait(1200);
+  const names = await page.$$eval(".stage .name", (ns) => ns.map((n) => n.textContent));
+  expect(names.includes("big") && !names.some((n) => n.startsWith("big.")), `stages: ${names.join(", ")}`);
+  const c = await nodeCenter("big");
+  await page.mouse.click(c.x, c.y, { count: 2 });
+  await wait(1500);
+  expect((await page.$$(".react-flow__node-module")).length === 13, "the 13 modules are not shown closed");
+  expect((await page.$$(".react-flow__node-fn")).length === 0, "functions show before opening a module");
+  await page.$$eval(".react-flow__node-module", (ns) => ns.find((n) => n.textContent.includes("m3.py")).click());
+  await wait(1500);
+  expect((await page.$$(".react-flow__node-fn")).length === 4, "opening m3.py does not show its 4 functions");
 });
 
 await check("no uncaught page errors", async () => expect(!errors.length, errors.join("; ")));
