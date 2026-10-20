@@ -171,6 +171,32 @@ scans the value table; an oid index written at capture is the upgrade if that ge
   how two runs on different inputs differ when they take the same path.
 - Later: aggregation of repeated siblings before aligning.
 
+### Replay: timeline, call graph, watch
+
+`Timeline` is every call's start and its return or raise, in `seq` order, built once per run and paged; each step
+carries the values bound at it (arguments at a call, the result at a return, the locals where it raised). `start`
+is the first call that is not an import or a class body: where the program's work begins. `call_graph` is functions
+as nodes and "A called B" as edges, with the `seq` each first happened. `watch` is every value a variable name had,
+in time order.
+
+### Callbacks
+
+`callbacks(reader, calls)` marks the calls that were not made by name (inferred). For each call:
+
+1. Its caller is library code (not observed): `by`, the library function that called back (`json.loads`).
+2. Otherwise, the caller's source line (and the two before it, for calls over several lines) is checked for
+   `name(`, with a class's name standing for its `__init__`. Dunder methods (run by protocol) and lambdas count as
+   named. If the name is not there, the call was indirect: `line` is that source line, `via` is where the function
+   was among the caller's arguments, `self` included (a function value is encoded with its `module.qualname`
+   label, bound methods too: `self.steps[1]`, `self.handlers['done'][0]`), and `registered` the first binding of
+   the run holding it (`steps[1]` passed to `Pipeline.__init__`, `handler` to `EventBus.on`, the result of
+   `make_to_usd`).
+
+Limits: a builtin such as `map` or `sorted` leaves no node, so its callbacks hang from the caller with the line
+that handed the function over. A function reached through a closure or a global is marked without `via`. A line
+that names the function but calls it through another path counts as named. Timeline steps carry `callback`, and a
+graph edge is as its first call.
+
 ### Search (FR-ANA-8)
 
 Function/module name substring, variable name, and string/number content of encoded values. Results link to call

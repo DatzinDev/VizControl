@@ -22,3 +22,7 @@ The trace format and APIs are designed so none of them needs a breaking change.
 | 13 | Multi-process and distributed | trace format | Follow subprocesses; merge runs by trace context (OpenTelemetry interop). |
 | 14 | Other runtimes | trace format | Any producer of valid `.vizc` files gets the viewer for free. |
 | 15 | Optional AI assistance | server API | Natural-language queries answered **only** from stored observations, with citations to calls/values (NFR-AI-1). |
+
+In 0.4 the viewer became a single view, Replay (the run as a recording, with callbacks marked). The Level 1–4,
+Data Flow, Diff and Map views left the viewer; their analysis stays in the server and the CLI (`vizcontrol diagram`,
+`vizcontrol diff`). Next for Replay: step over / step out, per-line steps.
