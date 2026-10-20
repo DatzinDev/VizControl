@@ -49,7 +49,10 @@ export async function layoutTree(
   // a compound box must not carry width/height keys at all: elk fails on `undefined` sizes
   const toElk = (b: TreeBox): object =>
     b.children
-      ? { id: b.id, children: b.children.map(toElk), layoutOptions: { "elk.padding": "[top=34,left=14,bottom=14,right=14]" } }
+      ? { id: b.id, children: b.children.map(toElk), layoutOptions: {
+        "elk.padding": "[top=34,left=14,bottom=14,right=14]",
+        // spacing is not inherited: without it, calls inside one box sit a few pixels apart and their arrows vanish
+        "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "22" } }
       : { id: b.id, width: b.width, height: b.height };
   const graph = await elk.layout({
     id: "root",

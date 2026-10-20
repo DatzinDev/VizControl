@@ -269,10 +269,13 @@ export function ReplayView(props: {
         : e.callback ? "var(--flow)" : "var(--muted)";
       const tag = e.callback ? (e.callback.by ? "callback" : e.callback.via ? `via ${e.callback.via}` : "callback") : "";
       const count = e.calls > 1 ? `×${e.calls}` : "";
-      return { id, source: `c${e.source}`, target: `c${e.target}`, type: "smoothstep", animated: live, zIndex: 10,
-        label: seen ? [tag, count].filter(Boolean).join(" ") || undefined : undefined,
-        style: { stroke: color, strokeWidth: live ? 2.5 : 1, opacity: seen ? 1 : 0.35, strokeDasharray: e.callback && !live ? "6 4" : undefined },
-        markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 } };
+      // the path to the current call is solid, thick and on top; bezier curves keep edges that share an end apart
+      // (orthogonal ones ran along the same lanes and hid it); dashes stay for callbacks
+      return { id, source: `c${e.source}`, target: `c${e.target}`, type: "default", zIndex: live ? 20 : 10,
+        className: live ? "live" : undefined,
+        label: seen && !live ? [tag, count].filter(Boolean).join(" ") || undefined : undefined,  // nothing over the path
+        style: { stroke: color, strokeWidth: live ? 3.5 : 1.2, opacity: seen ? 1 : 0.35, strokeDasharray: e.callback && !live ? "6 4" : undefined },
+        markerEnd: { type: MarkerType.ArrowClosed, color, width: live ? 18 : 14, height: live ? 18 : 14 } };
     });
   }, [graph, now, stackCodes, flowEdges]);
 

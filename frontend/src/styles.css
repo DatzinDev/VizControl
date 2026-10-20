@@ -213,3 +213,4 @@ button.oid:hover { outline: 1px solid var(--flow); }
 .callback-box { border: 1px dashed var(--flow); border-radius: 8px; padding: 8px 10px; margin-top: 8px; font-size: 12px;
   display: flex; flex-direction: column; gap: 4px; }
 .callback-box .label { color: var(--flow); }
+.react-flow__edge.live .react-flow__edge-path { filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent) 70%, transparent)); }
