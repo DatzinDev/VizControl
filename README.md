@@ -16,7 +16,8 @@ vizcontrol diff <a>.vizc <b>.vizc     # where two runs split and which results d
 ```
 
 Start with [Understanding a project you didn't write](https://github.com/DatzinDev/VizControl/blob/main/docs/guide.md),
-or try `vizcontrol run examples/pipeline.py --bad` and `vizcontrol serve`.
+or the [demo](https://github.com/DatzinDev/VizControl/tree/main/examples/demo): a small project traced three ways
+(a build that works, one that fails, its tests) with a tour of what the viewer shows.
 
 The viewer goes from the whole project (a map of every run's route) down to stages, functions, calls and values;
 follows an object through the calls that touched it; and opens a failed run on its failure, with what a passing
