@@ -101,51 +101,67 @@ def stage_namer(config: dict):
     return stage_of
 
 
-MIN_STAGES = 3  # a project in fewer module stages than this is split into the functions its entry fans out to
+MIN_STAGES = 3  # a project in fewer module stages than this is split into the functions it fans out to
+
+
+def module_stages(reader: Reader) -> set[str]:
+    """The observed module stages of a run: what decides whether a project is split into functions."""
+    namer = stage_namer(reader.run()["config"])
+    return {namer(c["module"], True) for c in reader.codes() if c["observed"]}
 
 
 class Stager:
     """Which stage each call belongs to (inferred). By module path (`stage_namer`), except below a head function:
-    a code matched by a `module:function` rule, or, when the project has fewer than MIN_STAGES module stages, one of
-    the functions its entry fans out to, past a chain of lone callees (`main()` -> `run()`). A head's stage takes
-    the calls below it that are in the head's own module stage; other modules keep theirs."""
+    a code matched by a `module:function` rule, or, when the project is split (fewer than MIN_STAGES module stages),
+    one of the functions a module stage fans out to. Fanning out starts at the codes entering the stage (root
+    calls, or calls from another stage) and goes past lone callees (`main()` -> `run()`) to the first caller with
+    two or more. A head's stage takes the calls below it in the head's own module stage; other modules keep theirs.
+    `heads` decides for a set of runs at once (`vizcontrol serve` of a directory), as the (module, qualname) of
+    every head any of them found, so a function is a stage in all of them; None decides from this run alone."""
 
-    def __init__(self, reader: Reader):
+    def __init__(self, reader: Reader, heads: frozenset[tuple[str, str]] | None = None):
         config = reader.run()["config"]
         self.namer = stage_namer(config)
         codes = {c["id"]: c for c in reader.codes()}
         self.heads: dict[int, tuple[str, str]] = {}  # code_id -> (its stage, the module stage it splits)
+        self.names: frozenset[tuple[str, str]] = frozenset()  # (module, qualname) of the heads found
         rules = [(s, g) for s, globs in (config.get("stages") or {}).items() for g in globs if ":" in g]
         for c in codes.values():
             s = next((s for s, g in rules if fnmatch.fnmatch(f"{c['module']}:{c['qualname']}", g)), None)
             if s is not None:
                 self.heads[c["id"]] = (s, self.namer(c["module"], c["observed"]))
-        if not rules:
+        if rules:
+            return
+        if heads is None and len(module_stages(reader)) < MIN_STAGES:
             self._fan_out(reader, codes)
+        for c in codes.values():
+            if heads and (c["module"], c["qualname"]) in heads:
+                self.heads[c["id"]] = (c["qualname"], self.namer(c["module"], c["observed"]))
+        self.names = frozenset((codes[k]["module"], codes[k]["qualname"]) for k in self.heads)
 
     def _fan_out(self, reader: Reader, codes: dict[int, dict]) -> None:
         base = {k: self.namer(c["module"], c["observed"]) for k, c in codes.items()}
-        roots = reader.roots()
-        if not roots or len({base[k] for k, c in codes.items() if c["observed"]}) >= MIN_STAGES:
-            return
-        entry = base[reader.call(roots[0]["id"])["code_id"]]
-        frontier, callees = [], defaultdict(set)
+        callees: dict[object, set[int]] = defaultdict(set)  # (None, stage) stands for "outside the stage"
         for caller, k in reader.code_calls():
-            if caller is None and base[k] == entry:
-                frontier.append(k)
-            elif caller is not None and base[k] == entry and codes[k]["kind"] not in ("module", "class"):
+            if not codes[k]["observed"]:
+                continue
+            if caller is None or base[caller] != base[k]:
+                callees[(None, base[k])].add(k)
+            elif codes[k]["kind"] not in ("module", "class"):
                 callees[caller].add(k)
-        seen = set(frontier)
-        while frontier:
-            lone = []
-            for caller in frontier:
-                ks = callees[caller] - seen
-                seen |= ks
-                if len(ks) == 1:
-                    lone += ks
-                else:
-                    self.heads.update((k, (codes[k]["qualname"], entry)) for k in ks)
-            frontier = lone
+        for stage in {base[k] for k, c in codes.items() if c["observed"]}:
+            frontier, seen = [(None, stage)], set()
+            while frontier:
+                lone = []
+                for caller in frontier:
+                    ks = callees[caller] - seen
+                    seen |= ks
+                    fns = {k for k in ks if codes[k]["kind"] not in ("module", "class")}
+                    if len(fns) > 1:
+                        self.heads.update((k, (codes[k]["qualname"], stage)) for k in fns)
+                        ks -= fns
+                    lone += ks  # a lone function, an import or a class body: keep looking below it
+                frontier = lone
 
     def step(self, module: str | None, observed, code_id: int, head: tuple | None) -> tuple[str, tuple | None]:
         """(stage of a call, the head that applies to its callees), given the head that applies to the call."""
@@ -185,10 +201,10 @@ class Stager:
         return head
 
 
-def stages(reader: Reader) -> dict:
+def stages(reader: Reader, heads: frozenset | None = None) -> dict:
     """Stage graph for the Level-1 overview (FR-ANA-2). One pass over all calls."""
     rows = reader.all_calls()
-    stage_by_call = Stager(reader).assign(rows)
+    stage_by_call = Stager(reader, heads).assign(rows)
     dur: dict[int, int] = {}
     child_dur: dict[int, int] = defaultdict(int)
     nodes: dict[str, dict] = {}
@@ -288,13 +304,13 @@ def _class_of(qualname: str) -> str | None:
     return ".".join(parts[:-1]) if len(parts) > 1 and "<locals>" not in parts else None
 
 
-def stage_detail(reader: Reader, stage: str) -> dict | None:
+def stage_detail(reader: Reader, stage: str, heads: frozenset | None = None) -> dict | None:
     """Level 2 (FR-VIZ-2): one stage opened into module › class › function, one node per function (its calls
     aggregated), the calls between them, and the calls crossing the stage boundary per (caller, callee) pair.
     ponytail: every function of the stage is returned; page them if a stage ever has thousands."""
     codes = {c["id"]: c for c in reader.codes()}
     rows = reader.all_calls()
-    stage_by_call = Stager(reader).assign(rows)
+    stage_by_call = Stager(reader, heads).assign(rows)
     code_by_call: dict[int, int] = {}
     dur: dict[int, int] = {}
     child_dur: dict[int, int] = defaultdict(int)
@@ -461,7 +477,7 @@ def _binding_view(b: dict) -> dict:
             "type": b["type"], "preview": preview(data)}
 
 
-def error_path(reader: Reader) -> dict | None:
+def error_path(reader: Reader, heads: frozenset | None = None) -> dict | None:
     """The exception that ended the run: where it started, how execution got there, how it propagated,
     and the latest observed changes to the objects in scope (FR-ANA-5)."""
     escaped = [e for e in reader.exceptions() if e["handled_call_id"] is None and e["raised_call_id"] is not None]
@@ -470,7 +486,7 @@ def error_path(reader: Reader) -> dict | None:
     exc = escaped[-1]
     path = reader.ancestors(exc["raised_call_id"])
     origin = path[-1]
-    stages_on_path = Stager(reader).path(path)
+    stages_on_path = Stager(reader, heads).path(path)
     locals_at_raise = [b for b in reader.bindings(origin["id"]) if b["kind"] == "raise"]
     recent = []
     for b in locals_at_raise:

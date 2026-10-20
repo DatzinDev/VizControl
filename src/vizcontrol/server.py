@@ -6,6 +6,7 @@ See docs/components/server.md.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import mimetypes
 import re
@@ -65,6 +66,24 @@ class Runs:
             self._readers[run_id] = hit = (mtime, Reader(path))
             self._cache = {k: v for k, v in self._cache.items() if k[0] != run_id}
         return hit[1]
+
+    def heads(self) -> frozenset:
+        """The head functions of the served project (`analysis.Stager`), decided over all runs so that a stage has
+        the same name in every run: none when the runs together have enough module stages, else every head any
+        run found on its own."""
+        ids = self.readable()
+        if len(set().union(*(self.cached(i, A.module_stages) for i in ids))) >= A.MIN_STAGES:
+            return frozenset()
+        return frozenset().union(*(self.cached(i, A.Stager).names for i in ids))
+
+    def readable(self) -> list[str]:
+        """The runs that open; /api/runs lists the others with their error."""
+        out = []
+        for run_id in self.ids():
+            with contextlib.suppress(Exception):  # one broken file must not hide the others
+                self.reader(run_id).run()
+                out.append(run_id)
+        return out
 
     def cached(self, run_id: str, fn, *args):
         reader = self.reader(run_id)
@@ -143,28 +162,29 @@ def api(runs: Runs, path: str, q: dict):
         raise NotFound(path)
     run_id, rest = unquote(m.group(1)), m.group(2) or ""
     r = runs.reader(run_id)
+    heads = runs.heads()
     if rest == "":
         return {**_summary(runs, run_id), "run": r.run(), "counts": r.counts()}
     if rest == "/stages":
-        return runs.cached(run_id, A.stages)
+        return runs.cached(run_id, A.stages, heads)
     if rest in ("/stage", "/mermaid"):
         name = q.get("name", [None])[0]
         if rest == "/mermaid" and name is None:  # `vizcontrol diagram`, for the viewer's copy button
-            return {"mermaid": runs.cached(run_id, D.stages)}
-        if name not in {n["name"] for n in runs.cached(run_id, A.stages)["nodes"]}:  # only real stages get cached
+            return {"mermaid": runs.cached(run_id, D.stages, heads)}
+        if name not in {n["name"] for n in runs.cached(run_id, A.stages, heads)["nodes"]}:  # only real stages cached
             raise NotFound(f"no stage {name!r}")
         if rest == "/mermaid":
-            return {"mermaid": runs.cached(run_id, D.stage, name)}
-        return runs.cached(run_id, A.stage_detail, name)
+            return {"mermaid": runs.cached(run_id, D.stage, name, heads)}
+        return runs.cached(run_id, A.stage_detail, name, heads)
     if rest == "/tree":
         node, code = _int(q, "node", None, 1, 1 << 62), _int(q, "code", None, 1, 1 << 62)
         offset, limit = _int(q, "offset", 0, 0, 1 << 62), _int(q, "limit", 200, 1, 1000)
         if code is not None:
             return A.group_members(r, node, code, offset, limit)
-        stager = runs.cached(run_id, A.Stager)
+        stager = runs.cached(run_id, A.Stager, heads)
         return A.subtree(r, node, _int(q, "depth", 1, 1, 4), limit, stager, stager.head_of(r, node))
     if rest == "/error":
-        return runs.cached(run_id, A.error_path)
+        return runs.cached(run_id, A.error_path, heads)
     if rest == "/search":
         return A.search(r, q.get("q", [""])[0])
     if rest == "/objects":
@@ -174,12 +194,12 @@ def api(runs: Runs, path: str, q: dict):
         raise NotFound(path)
     kind, ident, sub = m.group(1), int(m.group(2)), m.group(3)
     if kind == "calls" and sub is None:
-        return _call(r, ident, runs.cached(run_id, A.Stager))
+        return _call(r, ident, runs.cached(run_id, A.Stager, heads))
     if kind == "calls" and sub == "/bindings":
         return _bindings(r, ident)
     if kind == "calls" and sub == "/path":
         path = r.ancestors(ident)
-        return [A.call_node(c, s) for c, s in zip(path, runs.cached(run_id, A.Stager).path(path), strict=True)]
+        return [A.call_node(c, s) for c, s in zip(path, runs.cached(run_id, A.Stager, heads).path(path), strict=True)]
     if sub is None and kind == "values":
         v = r.value(ident)
         if v is None:

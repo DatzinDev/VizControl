@@ -2,6 +2,7 @@ import pytest
 
 import vizcontrol
 from vizcontrol import analysis as A
+from vizcontrol.server import Runs, api
 from vizcontrol.store import Reader
 
 
@@ -93,6 +94,32 @@ def test_function_rules_make_stages(tmp_path):
         main()
     names = [n["name"] for n in A.stages(Reader(t.path))["nodes"]]
     assert names[1:] == ["T", "Load"]  # with rules, only the rules split
+
+
+def test_a_module_called_from_another_splits_at_the_functions_it_is_entered_by(tmp_path, monkeypatch):
+    (tmp_path / "lib_a.py").write_text(
+        "def parse(x):\n    return x + 1\n\n\ndef save(x):\n    return [x]\n\n\n"
+        "def run(x):\n    return save(parse(x))\n")
+    (tmp_path / "driver.py").write_text("import lib_a\n\n\ndef go():\n    return lib_a.run(1)\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    import driver
+
+    with vizcontrol.trace(output=tmp_path / "two.vizc") as t:
+        driver.go()
+    r = Reader(t.path)
+    assert [n["name"] for n in A.stages(r)["nodes"]] == ["driver", "lib_a", "parse", "save"]  # run() is lone
+    assert A.Stager(r).names == {("lib_a", "parse"), ("lib_a", "save")}
+    assert [n["name"] for n in A.stages(r, heads=frozenset())["nodes"]] == ["driver", "lib_a"]
+    with vizcontrol.trace(output=tmp_path / "direct.vizc") as t:
+        driver.lib_a.parse(1)  # alone, parse is just its module's entry; served with two.vizc it is a stage
+    r = Reader(t.path)
+    assert [n["name"] for n in A.stages(r)["nodes"]] == ["lib_a"]
+    assert [n["name"] for n in A.stages(r, A.Stager(Reader(tmp_path / "two.vizc")).names)["nodes"]] == ["parse"]
+    runs = Runs(tmp_path)  # served together, a run's heads are every run's heads
+    assert runs.heads() == {("lib_a", "parse"), ("lib_a", "save")}
+    direct = next(n for n in api(runs, "/api/runs/direct.vizc/stages", {})["nodes"])
+    assert direct["name"] == "parse"
 
 
 def test_subtree_groups_repeated_siblings(tmp_path):
