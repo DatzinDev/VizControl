@@ -504,7 +504,32 @@ def object_flow(reader: Reader, object_id: int, limit: int = 200) -> dict:
     return {"object_id": object_id, "type": appearances[0]["type"] if appearances else None,
             "name": min(named, key=len) if named else None,
             "total": len(appearances), "appearances": appearances[:limit], "links": links[:limit],
-            "changes": changes}
+            "changes": changes, **_derived(reader, object_id, appearances)}
+
+
+def _derived(reader: Reader, oid: int, appearances: list[dict], limit: int = 500) -> dict:
+    """Where the data went when it changed objects (inferred): `became`, what calls that took this one in returned
+    (a new object, or a value such as a string); `made_from`, the objects passed to the call that returned this
+    one. Identity alone stops at a function that builds a new list or record; this is the next hop."""
+    def hop(rows: list[dict], values: bool) -> list[dict]:
+        out, seen = [], {oid}
+        for b in rows:
+            data = json.loads(b["data"])
+            if b["object_id"] in seen or b["name"] == "self":  # the method's own object is not the data
+                continue
+            if b["object_id"] is None and (not values or data["t"] == "none"):
+                continue
+            if _find(data, oid) is not None:  # still holds this object: not a different piece of data
+                continue
+            if b["object_id"] is not None:
+                seen.add(b["object_id"])
+            out.append({"call_id": b["call_id"], "qualname": b["qualname"], "name": b["name"],
+                        "object_id": b["object_id"], "type": b["type"], "preview": preview(data, 80), "inferred": True})
+        return out
+    took = list(dict.fromkeys(a["call_id"] for a in appearances if a["role"] == "arg"))[:limit]
+    made = list(dict.fromkeys(a["call_id"] for a in appearances if a["role"] == "return" and a["path"] == ""))[:limit]
+    return {"became": hop(reader.top_bindings(took, "return"), values=True),  # a str or number result too
+            "made_from": hop(reader.top_bindings(made, "arg"), values=False)}
 
 
 # -- errors -------------------------------------------------------------------------------------------------------

@@ -135,6 +135,10 @@ scans the value table; an oid index written at capture is the upgrade if that ge
   inferred, and exact only when `state` level captured snapshots at both ends.
 - Links on oids from non-weak-referenceable objects are labelled `identity: inferred` (see
   [serialization](serialization.md#object-identity-fr-val-3)).
+- **Hops** (inferred): identity stops where a function builds a new list or record from the object. `became` lists
+  what the calls that took the object in returned (a new object to follow, or a value such as a string), and
+  `made_from` the objects passed to the call that returned it (`self` aside). A result that still holds the
+  object is the same data, not a hop.
 
 `value_diff` compares two value trees by path and returns `added`, `removed` and `changed` entries
 (`path`, `before`, `after`). Truncated subtrees compare as "unknown", never as "equal".
