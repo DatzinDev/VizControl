@@ -260,10 +260,9 @@ class Reader:
             "code.observed, code.kind, call.code_id FROM call JOIN code ON code.id = call.code_id "
             "ORDER BY call.seq_start").fetchall()
 
-    def thread_firsts(self) -> list[dict]:
-        """Each thread's first call, in time order."""
-        return self._all("SELECT thread_id, id AS call_id, MIN(start_ns) AS start_ns FROM call GROUP BY thread_id "
-                         "ORDER BY start_ns")
+    def roots(self) -> list[dict]:
+        """Root calls, in time order. A thread id is not a thread: Python reuses idents once a thread ends."""
+        return self._all("SELECT id, thread_id, start_ns FROM call WHERE parent_id IS NULL ORDER BY start_ns")
 
     def thread_start_calls(self) -> list[dict]:
         """Opaque `threading.Thread.start` calls, in time order."""

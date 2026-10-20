@@ -173,16 +173,22 @@ def _main_path(roots: list[str], edges: dict[tuple[str, str], dict]) -> list[str
 # -- threads --------------------------------------------------------------------------------------------------------
 
 def thread_starts(reader: Reader) -> dict[int, int]:
-    """thread_id -> the `Thread.start` call that started it. Inferred: a new thread's first call is matched to the
-    earliest unmatched `Thread.start` that began before it, in another thread. `start()` waits for the thread to
-    run, so time order lines them up; a thread started from untraced code may take a later start's match."""
-    firsts = reader.thread_firsts()
+    """root call id -> the `Thread.start` call that launched its thread. Inferred: each root call outside the run's
+    first thread takes the earliest unmatched `Thread.start` that began before it, in another thread. `start()`
+    waits for the thread to run, so time order lines them up. Keyed by root call, not thread id: Python reuses
+    idents. ponytail: a thread whose target reaches traced code twice from untraced code takes two starts."""
+    roots = reader.roots()
     starts = reader.thread_start_calls()
+    main = roots[0]["thread_id"] if roots else None  # alive the whole run, so its ident is never reused
     out: dict[int, int] = {}
-    for t in firsts[1:]:  # the first thread is the one the run began in
+    used: set[int] = set()
+    for root in roots:
+        if root["thread_id"] == main:
+            continue
         for s in starts:
-            if s["start_ns"] < t["start_ns"] and s["thread_id"] != t["thread_id"] and s["id"] not in out.values():
-                out[t["thread_id"]] = s["id"]
+            if s["id"] not in used and s["start_ns"] < root["start_ns"] and s["thread_id"] != root["thread_id"]:
+                out[root["id"]] = s["id"]
+                used.add(s["id"])
                 break
     return out
 
