@@ -432,7 +432,7 @@ def stage_detail(reader: Reader, stage: str, heads: frozenset | None = None, dep
                     "file": c["relpath"] or c["path"], "kind": kind, "observed": bool(observed), "calls": 0,
                     "total_ns": 0, "self_ns": 0, "raised": 0, "unfinished": 0, "first_call": cid, "first_seq": seq}
             f["calls"] += 1
-            if parent is None or code_by_call[parent] != code_id:  # ponytail: direct recursion only, not a->b->a
+            if parent is None or code_by_call.get(parent) != code_id:  # ponytail: direct recursion only, not a->b->a
                 f["total_ns"] += d
             f["raised"] += outcome == "raised"
             f["unfinished"] += outcome == "unfinished"
@@ -440,7 +440,7 @@ def stage_detail(reader: Reader, stage: str, heads: frozenset | None = None, dep
                 internal[(code_by_call[parent], code_id)] += 1
             else:
                 total += 0 if inside.get(parent) else d
-                incoming[(pstage, parent and code_by_call[parent], code_id)] += 1
+                incoming[(pstage, code_by_call.get(parent), code_id)] += 1
         elif pstage == stage:
             outgoing[(code_by_call[parent], s)] += 1
     if not funcs:
