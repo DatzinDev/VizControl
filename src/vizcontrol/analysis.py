@@ -458,7 +458,8 @@ def stage_detail(reader: Reader, stage: str, heads: frozenset | None = None, dep
         "stats": {"modules": len({f["module"] for f in fs}), "classes": len({(f["module"], f["cls"]) for f in fs
                                                                              if f["cls"]}),
                   "functions": len(fs), "calls": sum(f["calls"] for f in fs), "total_ns": total,
-                  "self_ns": sum(f["self_ns"] for f in fs)},
+                  # ponytail: a generator's span includes the time it sat suspended while its consumer ran
+                  "self_ns": min(sum(f["self_ns"] for f in fs), total)},
         "inferred": True,
     }
 
