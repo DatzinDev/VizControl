@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { api, Binding, CallDetail, Change, Enc, ErrorPath, ObjectFlow, ObjectSummary, RunSummary, Source, StageNode, Value } from "./api";
+import { api, Binding, CallDetail, Change, Enc, ErrorPath, ObjectFlow, ObjectSummary, RunSummary, Source, StageDetail, StageNode, Value } from "./api";
+import { fnLabel } from "./ComponentView";
 import { changeText, ms, outcomeIcon, runLabel, shortName } from "./format";
 
 function useLoad<T>(load: () => Promise<T>, deps: unknown[]): T | undefined {
@@ -60,13 +61,13 @@ export function RunInspector({ run, error, onOpenCall }: { run: RunSummary; erro
         </Section>
       )}
       <div className="box dashed muted" style={{ fontSize: 12 }}>
-        ┄ Stages are inferred from module paths (stage_depth, or [tool.vizcontrol.stages]). Double-click a stage to open its calls.
+        ┄ Stages are inferred from module paths (stage_depth, or [tool.vizcontrol.stages]). Double-click a stage to open it.
       </div>
     </>
   );
 }
 
-export function StageInspector({ stage, onOpenCall }: { stage: StageNode; onOpenCall: (id: number) => void }) {
+export function StageInspector({ stage, onOpenCall, onOpenStage }: { stage: StageNode; onOpenCall: (id: number) => void; onOpenStage: (name: string) => void }) {
   return (
     <>
       <div className="title-lg">{stage.name}</div>
@@ -77,7 +78,58 @@ export function StageInspector({ stage, onOpenCall }: { stage: StageNode; onOpen
       <Section title="Modules">
         {stage.modules.map((m) => <div key={m} className="mono" style={{ fontSize: 12 }}>{m}</div>)}
       </Section>
+      <button className="link" onClick={() => onOpenStage(stage.name)}>Open stage →</button>
       <button className="link" onClick={() => onOpenCall(stage.first_call)}>Open first call →</button>
+    </>
+  );
+}
+
+/** Level 2: the opened stage's numbers, where it is entered from, what it calls and its files. */
+export function ComponentInspector(props: { detail: StageDetail; onOpenCall: (id: number) => void; onOpenStage: (name: string) => void }) {
+  const { detail, onOpenCall, onOpenStage } = props;
+  const st = detail.stats;
+  const fn = new Map(detail.functions.map((f) => [f.code_id, f]));
+  const raised = detail.functions.reduce((n, f) => n + f.raised, 0);
+  const out = new Map<string, number>();
+  for (const o of detail.outgoing) out.set(o.stage, (out.get(o.stage) ?? 0) + o.calls);
+  const files = [...new Set(detail.functions.map((f) => f.file).filter(Boolean))] as string[];
+  return (
+    <>
+      <div className="title-lg">{detail.stage}</div>
+      <Outcome outcome={raised ? "raised" : "ok"} extra={detail.observed ? "stage (inferred)" : "library · not observed inside"} />
+      <Section title="Stage">
+        <KV rows={[["modules", String(st.modules)], ["classes", String(st.classes)], ["functions", String(st.functions)],
+          ["calls", st.calls.toLocaleString()], ["total", ms(st.total_ns)], ["self", ms(st.self_ns)]]} />
+      </Section>
+      {detail.incoming.length > 0 && (
+        <Section title="Entered from">
+          {detail.incoming.slice(0, 10).map((i, k) => {
+            const to = fn.get(i.to)!;
+            return (
+              <button key={k} className="binding" onClick={() => onOpenCall(to.first_call)}>
+                <span className="k">{i.stage ?? "run"}</span>
+                <span className="v">{i.from_qualname ?? "entry"} → {to.kind === "method" || to.kind === "function" ? to.qualname : fnLabel(to)}{i.calls > 1 ? ` ×${i.calls}` : ""}</span>
+              </button>
+            );
+          })}
+        </Section>
+      )}
+      {out.size > 0 && (
+        <Section title="Calls out to">
+          {[...out].sort((a, b) => b[1] - a[1]).map(([stage, n]) => (
+            <button key={stage} className="binding" onClick={() => onOpenStage(stage)}>
+              <span className="v">{stage}</span>
+              <span className="k">×{n}</span>
+            </button>
+          ))}
+        </Section>
+      )}
+      <Section title="Files">
+        {files.map((f) => <div key={f} className="mono" style={{ fontSize: 12 }}>{f}</div>)}
+      </Section>
+      <div className="box dashed muted" style={{ fontSize: 12 }}>
+        ┄ One node per function, its calls added up. Click a function to open its first call, or a collapsed stage to open it.
+      </div>
     </>
   );
 }

@@ -1,27 +1,29 @@
 import { ReactFlowProvider } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, Binding, CallNode, ErrorPath, ObjectFlow, ObjectSummary, RunSummary, StageGraph } from "./api";
+import { api, Binding, CallNode, ErrorPath, ObjectFlow, ObjectSummary, RunSummary, StageDetail, StageGraph } from "./api";
 import { CallTreeView } from "./CallTreeView";
+import { ComponentView } from "./ComponentView";
 import { DataFlowView, ObjectPicker } from "./DataFlowView";
 import { ms, outcomeIcon, runLabel, shortName } from "./format";
-import { CallInspector, ObjectInspector, RunInspector, StageInspector, ValueInspector } from "./Inspector";
+import { CallInspector, ComponentInspector, ObjectInspector, RunInspector, StageInspector, ValueInspector } from "./Inspector";
 import { SearchPalette } from "./SearchPalette";
 import { StageView } from "./StageView";
 import { callKey, Key, useCallTree } from "./useCallTree";
 
-type View = "stages" | "calls" | "flow";
+type View = "stages" | "stage" | "calls" | "flow";
 type Selection = { kind: "stage"; name: string } | { kind: "call"; id: number } | null;
 
-function readHash(): { run: string | null; call: number | null; obj: number | null } {
+function readHash(): { run: string | null; call: number | null; obj: number | null; stage: string | null } {
   const p = new URLSearchParams(location.hash.slice(1));
   const num = (k: string) => (p.get(k) ? Number(p.get(k)) : null);
-  return { run: p.get("run"), call: num("call"), obj: num("obj") };
+  return { run: p.get("run"), call: num("call"), obj: num("obj"), stage: p.get("stage") };
 }
 
 export function App() {
   const initial = useMemo(readHash, []);
   const pendingCall = useRef(initial.call);  // the URL's call, opened once its run has loaded
   const pendingObj = useRef(initial.obj);  // likewise for the object followed in Data Flow
+  const pendingStage = useRef(initial.stage);  // and the stage opened at Level 2
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [runId, setRunId] = useState<string | null>(initial.run);
   const [view, setView] = useState<View>("stages");
@@ -29,6 +31,8 @@ export function App() {
   const [error, setError] = useState<ErrorPath | null | undefined>(undefined);
   const [selection, setSelection] = useState<Selection>(null);
   const [value, setValue] = useState<Binding | null>(null);
+  const [openStage, setOpenStage] = useState<string | null>(null);
+  const [detail, setDetail] = useState<StageDetail | null>(null);
   const [followed, setFollowed] = useState<number | null>(null);
   const [flow, setFlow] = useState<ObjectFlow | null>(null);
   const [objects, setObjects] = useState<ObjectSummary[] | undefined>(undefined);
@@ -57,6 +61,23 @@ export function App() {
     },
     [tree.reveal],
   );
+
+  const showStage = useCallback((name: string) => {
+    setOpenStage(name);
+    setSelection(null);
+    setValue(null);
+    setView("stage");
+  }, []);
+
+  useEffect(() => {
+    setDetail(null);
+    if (!runId || openStage == null) return;
+    let live = true;
+    api.stage(runId, openStage).then((d) => live && setDetail(d)).catch((e) => setProblem(String(e)));
+    return () => {
+      live = false;
+    };
+  }, [runId, openStage]);
 
   const follow = useCallback((oid: number) => {
     setFollowed(oid);
@@ -89,6 +110,7 @@ export function App() {
     setCenterOn(null);
     setFollowed(null);
     setObjects(undefined);
+    setOpenStage(null);
     let live = true;
     Promise.all([api.stages(runId), api.error(runId)]).then(([g, err]) => {
       if (!live) return;
@@ -96,8 +118,10 @@ export function App() {
       setError(err);
       const pending = runId === initial.run ? pendingCall.current : null;
       const pendingFlow = runId === initial.run ? pendingObj.current : null;
-      pendingCall.current = pendingObj.current = null;
+      const pendingL2 = runId === initial.run ? pendingStage.current : null;
+      pendingCall.current = pendingObj.current = pendingStage.current = null;
       if (pendingFlow) follow(pendingFlow);
+      else if (pendingL2) showStage(pendingL2);
       else if (pending) openCall(pending);
       else if (err) openCall(err.origin.id);
       else setView("stages");
@@ -111,9 +135,10 @@ export function App() {
     const p = new URLSearchParams();
     if (runId) p.set("run", runId);
     if (view === "flow" && followed != null) p.set("obj", String(followed));
+    else if (view === "stage" && openStage) p.set("stage", openStage);
     else if (selection?.kind === "call") p.set("call", String(selection.id));
     history.replaceState(null, "", `#${p}`);
-  }, [runId, selection, view, followed]);
+  }, [runId, selection, view, followed, openStage]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -134,16 +159,18 @@ export function App() {
   const selectedCall: CallNode | undefined =
     selection?.kind === "call" ? tree.callItem(callKey(selection.id)) ?? error?.path.find((c) => c.id === selection.id) : undefined;
   const isFailureView = view === "calls" && selection?.kind === "call" && error?.origin.id === selection.id;
-  const level = view === "flow" ? "Data Flow" : value ? "L4 · Value" : view === "stages" ? "L1 · Overview" : isFailureView ? "L3 · Failure" : selection ? "L3 · Function" : "L2 · Calls";
+  const level = view === "flow" ? "Data Flow" : view === "stage" ? "L2 · Components" : value ? "L4 · Value" : view === "stages" ? "L1 · Overview" : isFailureView ? "L3 · Failure" : selection ? "L3 · Function" : "L3 · Calls";
 
-  const crumbs: { label: string; onClick?: () => void }[] = [{ label: "Run", onClick: () => { setView("stages"); setSelection(null); setValue(null); } }];
-  if (run) crumbs.push({ label: runLabel(run), onClick: () => { setView("stages"); setSelection(null); setValue(null); } });
+  const toOverview = () => { setView("stages"); setSelection(null); setValue(null); setOpenStage(null); };
+  const crumbs: { label: string; onClick?: () => void }[] = [{ label: "Run", onClick: toOverview }];
+  if (run) crumbs.push({ label: runLabel(run), onClick: toOverview });
+  if (view === "stage" && openStage) crumbs.push({ label: openStage });
   if (view === "flow") {
     crumbs.push({ label: "Data Flow", onClick: () => setFollowed(null) });
     if (flow) crumbs.push({ label: `${flow.name ?? shortName(flow.type ?? "object")} #${flow.object_id}` });
   } else if (selection?.kind === "stage") crumbs.push({ label: selection.name });
   if (view !== "flow" && selectedCall) {
-    if (selectedCall.stage) crumbs.push({ label: selectedCall.stage });
+    if (selectedCall.stage) crumbs.push({ label: selectedCall.stage, onClick: () => showStage(selectedCall.stage!) });
     crumbs.push({ label: shortName(selectedCall.qualname), onClick: () => setValue(null) });
   }
   if (view !== "flow" && value) crumbs.push({ label: `${value.name ?? value.kind}${value.object_id != null ? ` #${value.object_id}` : ""}` });
@@ -160,7 +187,7 @@ export function App() {
           </div>
         )}
         <div className="tabs" role="tablist">
-          <button className={view !== "flow" ? "active" : ""} onClick={() => setView(selection?.kind === "call" ? "calls" : "stages")}>Execution Flow</button>
+          <button className={view !== "flow" ? "active" : ""} onClick={() => setView(selection?.kind === "call" ? "calls" : openStage ? "stage" : "stages")}>Execution Flow</button>
           <button className={view === "flow" ? "active" : ""} onClick={() => runId && (value?.object_id != null ? follow(value.object_id) : setView("flow"))}
             title="Follow one object across calls">Data Flow</button>
           <button disabled title="Coming next: compare two runs">Diff</button>
@@ -198,7 +225,7 @@ export function App() {
             <>
               <div className="label" style={{ marginTop: 8 }}>Stages</div>
               {stages.nodes.map((s) => (
-                <button key={s.name} className="stage-row" onClick={() => openCall(s.first_call)} title="Open the first call of this stage">
+                <button key={s.name} className="stage-row" onClick={() => showStage(s.name)} title="Open this stage">
                   <span className={s.raised ? "raised" : s.observed ? "ok" : "muted"}>{s.raised ? "⚠" : s.observed ? "●" : "▒"}</span>
                   <span style={{ flex: 1 }}>{s.name}</span>
                   <span className="muted">{s.calls}</span>
@@ -217,12 +244,12 @@ export function App() {
           {problem && <div className="empty raised">{problem}</div>}
           {!problem && view === "stages" && stages && (
             <>
-              <div className="hint">Main path in accent · double-click a stage to open its calls</div>
+              <div className="hint">Main path in accent · double-click a stage to open it</div>
               <StageView
                 graph={stages}
                 selected={selection?.kind === "stage" ? selection.name : null}
                 onSelect={(name) => { setSelection({ kind: "stage", name }); setValue(null); }}
-                onOpen={(name) => { const s = stages.nodes.find((n) => n.name === name); if (s) openCall(s.first_call); }}
+                onOpen={showStage}
               />
             </>
           )}
@@ -246,6 +273,14 @@ export function App() {
               </ReactFlowProvider>
             </>
           )}
+          {!problem && view === "stage" && (
+            detail ? (
+              <>
+                <div className="hint">Stage {detail.stage} opened · modules › classes › functions · click a function to open its first call</div>
+                <ComponentView detail={detail} onOpenStage={showStage} onOpenCall={openCall} />
+              </>
+            ) : <div className="empty">Loading…</div>
+          )}
           {!problem && view === "flow" && (
             flow ? (
               <>
@@ -266,13 +301,14 @@ export function App() {
         <aside className="panel inspector">
           {runId && view === "flow" && flow && <ObjectInspector run={runId} flow={flow} onOpenCall={openCall} onFollow={follow} />}
           {view === "flow" && !flow && run && <RunInspector run={run} error={error} onOpenCall={openCall} />}
-          {view !== "flow" && <>
+          {view === "stage" && detail && <ComponentInspector detail={detail} onOpenCall={openCall} onOpenStage={showStage} />}
+          {view !== "flow" && view !== "stage" && <>
           {runId && value && <ValueInspector run={runId} binding={value} onBack={() => setValue(null)} onOpenCall={openCall} onFollow={follow} />}
           {runId && !value && selection?.kind === "call" && (
             <CallInspector run={runId} id={selection.id} error={error} onOpenCall={openCall} onOpenValue={setValue} />
           )}
           {!value && selection?.kind === "stage" && stages && (
-            <StageInspector stage={stages.nodes.find((n) => n.name === selection.name)!} onOpenCall={openCall} />
+            <StageInspector stage={stages.nodes.find((n) => n.name === selection.name)!} onOpenCall={openCall} onOpenStage={showStage} />
           )}
           {!value && !selection && run && <RunInspector run={run} error={error} onOpenCall={openCall} />}
           </>}

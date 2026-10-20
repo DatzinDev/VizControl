@@ -44,6 +44,34 @@ export interface StageGraph {
   main_path: string[];
 }
 
+export interface StageFunction {
+  code_id: number;
+  qualname: string;
+  cls: string | null;
+  module: string | null;
+  file: string | null;
+  kind: string;
+  observed: boolean;
+  calls: number;
+  total_ns: number;
+  self_ns: number;
+  raised: number;
+  unfinished: number;
+  first_call: number;
+  first_seq: number;
+}
+
+/** Level 2: one stage opened into module › class › function. */
+export interface StageDetail {
+  stage: string;
+  observed: boolean;
+  functions: StageFunction[];
+  edges: { from: number; to: number; calls: number }[];
+  incoming: { stage: string | null; from_code: number | null; from_qualname: string | null; to: number; calls: number }[];
+  outgoing: { from: number; stage: string; calls: number }[];
+  stats: { modules: number; classes: number; functions: number; calls: number; total_ns: number; self_ns: number };
+}
+
 export interface CallNode {
   type: "call";
   id: number;
@@ -223,6 +251,7 @@ const run = (id: string) => `/api/runs/${encodeURIComponent(id)}`;
 export const api = {
   runs: () => get<RunSummary[]>("/api/runs"),
   stages: (r: string) => get<StageGraph>(`${run(r)}/stages`),
+  stage: (r: string, name: string) => get<StageDetail>(`${run(r)}/stage?name=${encodeURIComponent(name)}`),
   tree: (r: string, node: number | null) => get<TreeItem[]>(`${run(r)}/tree${node == null ? "" : `?node=${node}`}`),
   group: (r: string, node: number | null, code: number, offset: number, limit: number) =>
     get<CallNode[]>(`${run(r)}/tree?${node == null ? "" : `node=${node}&`}code=${code}&offset=${offset}&limit=${limit}`),
