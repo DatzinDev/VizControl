@@ -132,12 +132,20 @@ def stages(reader: Reader) -> dict:
                 e = edges.get((pstage, stage))
                 if e is None:
                     e = edges[(pstage, stage)] = {"from": pstage, "to": stage, "calls": 0, "total_ns": 0,
-                                                  "first_seq": seq}
+                                                  "first_seq": seq, "calls_below": 0}
                 e["calls"] += 1
                 e["total_ns"] += d
                 nodes[stage]["total_ns"] += d  # time spent in a stage counts from where it is entered
     for cid, stage in stage_by_call.items():
         nodes[stage]["self_ns"] += max(dur[cid] - child_dur.get(cid, 0), 0)
+    # subtree sizes (children come after parents in seq order): how much work each stage crossing leads to
+    size: dict[int, int] = defaultdict(lambda: 1)
+    for cid, parent, *_ in reversed(rows):
+        if parent is not None:
+            size[parent] += size[cid]
+    for cid, parent, *_ in rows:
+        if parent is not None and stage_by_call.get(parent) not in (None, stage_by_call[cid]):
+            edges[(stage_by_call[parent], stage_by_call[cid])]["calls_below"] += size[cid]
     for n in nodes.values():
         n["modules"] = sorted(m for m in n["modules"] if m)
         del n["first_call_is_import"]
@@ -147,7 +155,8 @@ def stages(reader: Reader) -> dict:
 
 
 def _main_path(roots: list[str], edges: dict[tuple[str, str], dict]) -> list[str]:
-    """From the entry stage, keep following the heaviest outgoing edge (by time) to a stage not yet on the path."""
+    """From the entry stage, keep following the outgoing edge that leads to the most calls (its subtree size; time
+    only breaks ties) to a stage not yet on the path. Call counts are deterministic, timings are noise in small runs."""
     if not roots:
         return []
     out: dict[str, list[dict]] = defaultdict(list)
@@ -158,7 +167,7 @@ def _main_path(roots: list[str], edges: dict[tuple[str, str], dict]) -> list[str
         nxt = [e for e in out[path[-1]] if e["to"] not in path]
         if not nxt:
             return path
-        path.append(max(nxt, key=lambda e: (e["total_ns"], -e["first_seq"]))["to"])
+        path.append(max(nxt, key=lambda e: (e["calls_below"], e["total_ns"], -e["first_seq"]))["to"])
 
 
 # -- values and data flow -----------------------------------------------------------------------------------------

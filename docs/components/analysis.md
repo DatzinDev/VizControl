@@ -53,8 +53,9 @@ A stage is a set of modules. Assignment, first match wins:
 
 `StageGraph`: one node per stage (call count, total time of the calls entering it, self time, raised/unfinished
 counts, first `seq`, modules, observed) and one edge per caller-stage → callee-stage pair (calls, time, first
-`seq`). The **main path** starts at the stage of the first root call and keeps following the heaviest outgoing
-edge (by time) to a stage not yet on the path. That is the `Request → Controller → Service → ... → Response`
+`seq`). The **main path** starts at the stage of the first root call and keeps following the outgoing edge that
+leads to the most calls (the subtree size of the calls crossing it; time only breaks ties) to a stage not yet on the
+path. Counts are deterministic, while timings are noise in small runs (a time-based rule flipped between CI runs). That is the `Request → Controller → Service → ... → Response`
 line of Level 1.
 
 ### Error path (FR-ANA-5)
