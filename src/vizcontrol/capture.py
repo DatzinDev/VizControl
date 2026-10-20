@@ -55,7 +55,7 @@ class Rec:
     The row is written once, when the call ends, unless a flush happens while it is open (`written`)."""
 
     __slots__ = ("id", "frame", "depth", "opaque", "parent_id", "tid", "code_id", "line", "seq", "start",
-                 "children", "written", "callable", "expect", "valued")
+                 "children", "written", "callable", "expect", "valued", "yields")
 
     def __init__(self, id, frame, depth, opaque, parent_id, tid, code_id, line, seq, start):
         self.id, self.frame, self.depth, self.opaque, self.parent_id = id, frame, depth, opaque, parent_id
@@ -65,6 +65,7 @@ class Rec:
         self.callable = None
         self.expect = ()
         self.valued = True  # its values are recorded (see Values.max_per_function)
+        self.yields = 0
 
 
 class ExcEntry:
@@ -365,7 +366,8 @@ class Tracer:
             vid = self._stored[key] = self.w.new_id("value")
             self.w.add("value", (vid, e.object_id, e.type, e.data, int(e.truncated), int(e.redacted)))
             self._stored_bytes += len(e.data)
-            if self._stored_bytes > 32 * 1024 * 1024:  # ponytail: forget all at once; an LRU if it ever matters
+            # ponytail: forget all at once; an LRU if it ever matters
+            if self._stored_bytes > 32 * 1024 * 1024 or len(self._stored) > 100_000:
                 self._stored.clear()
                 self._stored_bytes = 0
         self.w.add("binding", (call_id, seq, kind, name, line, vid))
@@ -602,7 +604,9 @@ class Tracer:
             top = stack[-1] if stack else None  # back in the code that consumed it (or the event loop)
             CALLER.set((top.id, top.depth, self) if top is not None and top.id is not None else None)
             if rec.id is not None and self.values and rec.valued:
-                self._bind(rec.id, self._seq(), "yield", None, frame.f_lineno, value)
+                rec.yields += 1
+                if rec.yields <= self.max_per_function:  # a generator of a million items shows its first ones
+                    self._bind(rec.id, self._seq(), "yield", None, frame.f_lineno, value)
         except Exception as e:
             self._fail(e)
 

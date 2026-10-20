@@ -110,10 +110,10 @@ names of `co_varnames`. Every value goes through the `Encoder` before being queu
 Real code repeats itself, and so do its values:
 - An encoded value already stored (same object id, type and data) is not stored again: its binding points to the
   existing row. On real projects 90% or more of the bindings repeat a value. The lookup table is dropped after
-  32 MiB of values.
+  32 MiB of values or 100,000 of them.
 - Only the first `values.max_per_function` calls (default 100) of each function record values. A hot function's
   later calls keep their structure, timing and outcome, but no arguments or return; the locals where an exception
-  originates are still recorded. The first excess call of each function writes a `limit_values_per_function` gap
+  originates are still recorded. A generator call likewise records its first `max_per_function` yielded items. The first excess call of each function writes a `limit_values_per_function` gap
   with its qualname.
 
 ### Exceptions (FR-CAP-6)
