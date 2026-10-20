@@ -204,8 +204,13 @@ class Reader:
             pass
         return False
 
+    def _tables(self) -> set[str]:
+        return {r["name"] for r in self._all("SELECT name FROM sqlite_master WHERE type = 'table'")}
+
     def counts(self) -> dict[str, int]:
-        return {t: self._one(f"SELECT COUNT(*) AS n FROM {t}")["n"] for t in COLUMNS}
+        """Rows per table; a table an older format lacks counts 0."""
+        have = self._tables()
+        return {t: self._one(f"SELECT COUNT(*) AS n FROM {t}")["n"] if t in have else 0 for t in COLUMNS}
 
     def call(self, call_id: int) -> dict | None:
         return self._one(f"SELECT {self._CALL_COLS} {self._CALL_FROM} WHERE call.id = ?", (call_id,))
@@ -337,7 +342,7 @@ class Reader:
 
     def regions(self) -> list[dict]:
         """Nested trace() blocks inside this run (format 1.1; a 1.0 file has none)."""
-        if not self._one("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = 'region'"):
+        if "region" not in self._tables():
             return []
         return self._all("SELECT * FROM region ORDER BY seq_start")
 
