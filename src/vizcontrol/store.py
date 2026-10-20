@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import os
 import sqlite3
 import threading
 from pathlib import Path
@@ -70,6 +71,21 @@ _CLOSE = ("UPDATE call SET seq_end = ?, end_ns = ?, outcome = ?, exception_id = 
 RUN_FIELDS = ("kind", "target", "argv", "cwd", "python", "started_wall", "started_ns", "outcome", "config")
 
 
+def is_trace(path: Path) -> bool:
+    """True if `path` is a VizControl trace (an SQLite file with our meta table)."""
+    try:
+        with open(path, "rb") as f:
+            if f.read(16) != b"SQLite format 3\x00":
+                return False
+        db = sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            return db.execute("SELECT 1 FROM meta WHERE key = 'format_version'").fetchone() is not None
+        finally:
+            db.close()
+    except (OSError, sqlite3.Error):
+        return False
+
+
 class Writer:
     """Buffers rows in memory; `flush()` writes them in one transaction. The caller decides when to flush
     (it watches `pending`), so the hot path is a lock and an append."""
@@ -77,9 +93,13 @@ class Writer:
     # ponytail: no time-based flush; add one if idle long-running programs need fresher files
     def __init__(self, path: str | Path, run: dict):
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        for leftover in (self.path, Path(f"{self.path}-wal"), Path(f"{self.path}-shm")):  # an explicit -o overwrites
+        self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if self.path.exists() and not is_trace(self.path):
+            raise FileExistsError(f"{self.path} exists and is not a VizControl trace; refusing to overwrite it")
+        for leftover in (self.path, Path(f"{self.path}-wal"), Path(f"{self.path}-shm")):  # a trace is overwritten
             leftover.unlink(missing_ok=True)
+        # traces hold program data: owner-only (SQLite gives its -wal/-shm files the same mode)
+        os.close(os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
         self._ids = {t: itertools.count(1).__next__ for t in ("file", "code", "call", "value", "exception", "gap")}
         self._rows: dict[str, list] = {t: [] for t in COLUMNS}
         self._closes: list[tuple] = []

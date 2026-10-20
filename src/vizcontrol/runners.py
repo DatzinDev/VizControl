@@ -41,13 +41,33 @@ def stamp() -> str:
 def ensure_dir(d: Path) -> Path:
     """Create the runs directory; a fresh one gets a .gitignore so traces never end up in git."""
     if not d.exists():
-        d.mkdir(parents=True)
+        d.mkdir(mode=0o700, parents=True)  # traces hold program data: owner-only
         (d / ".gitignore").write_text("*\n")
     return d
 
 
 def default_path(out_dir: str, target: str) -> Path:
     return ensure_dir(Path(out_dir)) / f"{stamp()}-{slug(os.path.basename(target.rstrip('/')))}.vizc"
+
+
+def scrub_argv(encoder: Encoder, argv: list[str]) -> list[str]:
+    """Redact secrets passed on the command line: `--api-key=x`, `--token x` (name rules) and value rules."""
+    out, hide_next = [], False
+    for arg in argv:
+        if hide_next and not arg.startswith("-"):
+            out.append("‹redacted›")
+            hide_next = False
+            continue
+        hide_next = False
+        if arg.startswith("-"):
+            name, eq, _ = arg.lstrip("-").partition("=")
+            if encoder.redact_name(name):
+                if eq:
+                    out.append(arg.split("=", 1)[0] + "=‹redacted›")
+                    continue
+                hide_next = True
+        out.append(encoder.scrub(arg)[0])
+    return out
 
 
 class Run:
@@ -57,7 +77,7 @@ class Run:
         self.path = Path(output) if output else default_path(config.out_dir, target)
         self.encoder = Encoder(config)
         meta = {
-            "kind": kind, "target": target, "argv": json.dumps([self.encoder.scrub(a)[0] for a in argv]),
+            "kind": kind, "target": target, "argv": json.dumps(scrub_argv(self.encoder, argv)),
             "cwd": os.getcwd(), "python": sys.version,
             "started_wall": datetime.datetime.now(datetime.UTC).isoformat(), "started_ns": time.perf_counter_ns(),
             "outcome": "running", "config": json.dumps(dataclasses.asdict(config)),
