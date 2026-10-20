@@ -190,3 +190,20 @@ def test_levels(tmp_path, level):
         assert r.counts()["binding"] == 0
     else:
         assert bindings(r, calls[0]["id"], "local") == {"n": {"t": "int", "v": 1}}
+
+
+def test_sigterm_closes_run_as_unfinished(tmp_path):
+    import signal
+    import time
+
+    (tmp_path / "slow.py").write_text("import time\n\ndef wait():\n    print('ready', flush=True)\n    time.sleep(30)\n\nwait()\n")
+    out = tmp_path / "s.vizc"
+    proc = subprocess.Popen([sys.executable, "-m", "vizcontrol", "run", "-o", str(out), "slow.py"],
+                            cwd=tmp_path, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert proc.stdout.readline().strip() == "ready"
+    time.sleep(0.2)
+    proc.send_signal(signal.SIGTERM)
+    assert proc.wait(timeout=20) == 143
+    r = Reader(out)
+    assert r.run()["outcome"] == "unfinished"
+    assert by_name(r, "wait")[0]["outcome"] == "raised"  # interrupted by the termination
