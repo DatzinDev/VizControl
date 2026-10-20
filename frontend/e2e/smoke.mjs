@@ -3,6 +3,7 @@
 import puppeteer from "puppeteer-core";
 
 const base = process.argv[2] ?? "http://127.0.0.1:7171/";
+const flatBase = process.argv[3];  // examples/pipeline.py, a one-file project
 const browser = await puppeteer.launch({
   executablePath: process.env.CHROME_PATH ?? "/usr/bin/google-chrome",
   headless: true,
@@ -201,6 +202,21 @@ await check("a failed run's overview marks where it stopped and what it never re
   await page.$$eval(".inspector .link", (ls) => ls.find((l) => l.textContent.startsWith("Compare with")).click());
   await wait(1200);
   expect((await text(".level")) === "Diff", `compare went to ${await text(".level")}`);
+});
+
+if (flatBase) await check("a one-file project is staged by its functions, and its failure shows what it never reached", async () => {
+  await page.goto(`${flatBase}#run=ok.vizc`, { waitUntil: "networkidle0" });
+  await wait(1200);
+  const names = await page.$$eval(".stage .name", (ns) => ns.map((n) => n.textContent));
+  expect(["read", "clean", "enrich", "summarize"].every((s) => names.includes(s)), `stages: ${names.join(", ")}`);
+  await page.goto(`${flatBase}#run=bad.vizc`, { waitUntil: "networkidle0" });
+  await page.reload({ waitUntil: "networkidle0" });
+  await wait(1200);
+  await page.$$eval(".crumbs button", (bs) => bs[0].click());
+  await wait(1200);
+  expect((await text(".stage.stopped .name")) === "clean", "the stopped stage is not clean");
+  const ghosts = await page.$$eval(".stage.ghost .name", (ns) => ns.map((n) => n.textContent));
+  expect(ghosts.includes("enrich") && ghosts.includes("summarize"), `not reached: ${ghosts.join(", ")}`);
 });
 
 await check("no uncaught page errors", async () => expect(!errors.length, errors.join("; ")));
