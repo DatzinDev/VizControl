@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  python:
+    name: tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked
+      - run: uv run pytest -q
+
+  viewer:
+    name: viewer (typecheck, build, e2e)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: uv sync --locked
+      - run: npm run e2e
+        working-directory: frontend
+
+  package:
+    name: wheel (built viewer inside, installs clean)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: uv build
+      - name: install the wheel in a clean venv and trace the sample app
+        run: |
+          uv venv /tmp/clean
+          uv pip install --python /tmp/clean/bin/python dist/*.whl
+          /tmp/clean/bin/python -c "from importlib import resources; assert resources.files('vizcontrol').joinpath('viewer/static/index.html').is_file()"
+          cd tests/samples/shop
+          /tmp/clean/bin/vizcontrol run -o /tmp/vip.vizc checkout.py vip || test $? -eq 1
+          /tmp/clean/bin/vizcontrol info /tmp/vip.vizc | grep -q "escaped   ValueError"
