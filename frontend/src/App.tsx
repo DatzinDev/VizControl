@@ -182,6 +182,14 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [searching, value, view]);
 
+  const cut = useCallback((c: CallNode): string | null => {
+    if (!run) return null;
+    if (run.cut_calls.includes(c.id)) return "max_calls reached here: tracing stopped, later calls were not recorded";
+    if (run.truncated.includes("limit_depth") && run.max_depth != null && c.depth >= run.max_depth)
+      return `max_depth (${run.max_depth}) reached: calls below this one, if any, were not recorded`;
+    return null;
+  }, [run]);
+
   const errorPath = useMemo(() => new Set<Key>(error ? error.path.map((c) => callKey(c.id)) : []), [error]);
   const selectedCall: CallNode | undefined =
     selection?.kind === "call" ? tree.callItem(callKey(selection.id)) ?? error?.path.find((c) => c.id === selection.id) : undefined;
@@ -294,6 +302,7 @@ export function App() {
                   focusError={focusError}
                   hideOpaqueLeaves={hideOpaque}
                   centerOn={centerOn}
+                  cut={cut}
                   onSelect={(key) => { if (key.startsWith("c")) { push(); setSelection({ kind: "call", id: Number(key.slice(1)) }); setValue(null); } else tree.toggle(key); }}
                 />
               </ReactFlowProvider>
@@ -321,6 +330,7 @@ export function App() {
             <span><span className="unfinished">◌</span> unfinished</span>
             <span>▒ not observed</span>
             <span>┄ inferred</span>
+            {run?.truncated.length ? <span><span className="unfinished">✂</span> cut by a limit</span> : null}
           </div>}
         </section>
 
@@ -331,7 +341,8 @@ export function App() {
           {view !== "flow" && view !== "stage" && <>
           {runId && value && <ValueInspector run={runId} binding={value} onBack={() => setValue(null)} onOpenCall={openCall} onFollow={follow} />}
           {runId && !value && selection?.kind === "call" && (
-            <CallInspector run={runId} id={selection.id} error={error} onOpenCall={openCall} onOpenValue={(b) => { push(); setValue(b); }} />
+            <CallInspector run={runId} id={selection.id} error={error} onOpenCall={openCall} onOpenValue={(b) => { push(); setValue(b); }}
+              cut={selectedCall ? cut(selectedCall) : null} />
           )}
           {!value && selection?.kind === "stage" && stages && (
             <StageInspector stage={stages.nodes.find((n) => n.name === selection.name)!} onOpenCall={openCall} onOpenStage={showStage} />

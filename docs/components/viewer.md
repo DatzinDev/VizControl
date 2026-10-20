@@ -18,6 +18,7 @@ lays out, renders and navigates. Visual concept: [UI design](../ui-design.md).
 | Level 3 call tree: lazy expansion, `×N` groups with paged members, opaque/unfinished/raised states | Diff tab (disabled) |
 | Failure mode: opens on the origin, red error path, off-path dimming, exception/locals/last-changes/traceback/source | "hidden (N)" stubs for filtered nodes. The only filter today hides library leaves |
 | Level 4 value tree, object history and field-level changes | Source panel beyond the inspector excerpt |
+| ✂ on calls cut by a limit (at `max_depth` when `limit_depth` was hit, or where `max_calls` stopped), with the reason in the inspector | |
 | ⌘K search; URL hash keeps `run` and `call`, `stage` or `obj`; browser back/forward walk every navigation (a run opening on its failure doesn't add an entry) | |
 | Data Flow: object picker, lanes per module, Δ on changed fields, object inspector, follow from any oid chip | |
 

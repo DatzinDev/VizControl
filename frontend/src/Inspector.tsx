@@ -174,8 +174,9 @@ export function CallInspector(props: {
   error: ErrorPath | null | undefined;
   onOpenCall: (id: number) => void;
   onOpenValue: (b: Binding) => void;
+  cut?: string | null;
 }) {
-  const { run, id, error, onOpenCall, onOpenValue } = props;
+  const { run, id, error, onOpenCall, onOpenValue, cut } = props;
   const call = useLoad<CallDetail>(() => api.call(run, id), [run, id]);
   const bindings = useLoad<Binding[]>(() => api.bindings(run, id), [run, id]) ?? [];
   const source = useLoad<Source | undefined>(async () => (call?.file_id ? api.source(run, call.file_id) : undefined), [run, call?.file_id]);
@@ -230,6 +231,7 @@ export function CallInspector(props: {
           ))}
         </Section>
       )}
+      {cut && <Section title="Not captured" className="box warn"><div style={{ fontSize: 12 }}>✂ {cut}</div></Section>}
       {args.length > 0 && <Section title="Arguments">{args.map((b, i) => <BindingRow key={i} b={b} onOpen={onOpenValue} />)}</Section>}
       {ret.length > 0 && <Section title="Return">{ret.map((b, i) => <BindingRow key={i} b={b} onOpen={onOpenValue} />)}</Section>}
       {by("local").length > 0 && <Section title="Locals at end">{by("local").map((b, i) => <BindingRow key={i} b={b} onOpen={onOpenValue} />)}</Section>}

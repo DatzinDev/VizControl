@@ -22,6 +22,7 @@ export interface TreeNodeData extends Record<string, unknown> {
   dim: boolean;
   expanded: boolean;
   onToggle: () => void;
+  cut: string | null;  // why calls below this one were not recorded, if they weren't
 }
 
 function stateClass(item: CallNode | GroupNode): string {
@@ -31,7 +32,7 @@ function stateClass(item: CallNode | GroupNode): string {
 }
 
 export function CallNodeView({ data }: NodeProps) {
-  const { item, selected, onPath, dim, expanded, onToggle } = data as TreeNodeData;
+  const { item, selected, onPath, dim, expanded, onToggle, cut } = data as TreeNodeData;
   if (item.type === "more") {
     return (
       <div className="node more">
@@ -53,6 +54,7 @@ export function CallNodeView({ data }: NodeProps) {
         {state !== "ok" && <span className={state === "opaque" ? "muted" : state}>{state === "opaque" ? "▒" : outcomeIcon[state]}</span>}
         <span className="q">{shortName(item.qualname)}</span>
         {isGroup && <span className="count">×{item.count}</span>}
+        {cut && <span className="cut" title={cut}>✂</span>}
       </div>
       <div className="meta">
         <span>{isGroup ? `${item.outcomes.ok} ok${item.outcomes.raised ? ` · ${item.outcomes.raised} raised` : ""}` : item.module}</span>

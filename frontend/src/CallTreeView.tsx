@@ -1,5 +1,6 @@
 import { Background, Controls, Edge, MarkerType, Node, ReactFlow, useReactFlow } from "@xyflow/react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CallNode } from "./api";
 import { layout } from "./layout";
 import { CALL_H, CALL_W, CallNodeView, MORE_H } from "./nodes";
 import { Key, useCallTree } from "./useCallTree";
@@ -15,8 +16,9 @@ export function CallTreeView(props: {
   hideOpaqueLeaves: boolean;
   centerOn: Key | null;
   onSelect: (key: Key) => void;
+  cut: (call: CallNode) => string | null;
 }) {
-  const { tree, selected, errorPath, focusError, hideOpaqueLeaves, centerOn, onSelect } = props;
+  const { tree, selected, errorPath, focusError, hideOpaqueLeaves, centerOn, onSelect, cut } = props;
   const [positions, setPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
   const flow = useReactFlow();
   const fitted = useRef(false);
@@ -70,6 +72,7 @@ export function CallTreeView(props: {
         dim: focusError && errorPath.size > 0 && !errorPath.has(v.key) && v.key !== selected,
         expanded: tree.isExpanded(v.key),
         onToggle: () => tree.toggle(v.key),
+        cut: v.item.type === "call" ? cut(v.item) : null,
       },
     }));
   const edges: Edge[] = shown
