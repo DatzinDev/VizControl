@@ -19,6 +19,7 @@ import threading
 import time
 import types
 from contextvars import ContextVar
+from importlib.machinery import ModuleSpec
 from types import BuiltinFunctionType, CodeType, FunctionType, MethodType
 
 from vizcontrol.config import Config
@@ -104,6 +105,17 @@ def _glob(pattern: str, path: str, module: str | None) -> bool:
     if module is None:
         return False
     return fnmatch.fnmatch(module, pattern) or (pattern.endswith(".*") and module == pattern[:-2])
+
+
+def _module_of(g: dict) -> str | None:
+    """The module a frame's code belongs to. `python -m pkg` runs pkg/__main__.py as `__main__`; its spec still
+    says `pkg.__main__`, the name the same file has when imported (by tests, say)."""
+    name = g.get("__name__")
+    if name == "__main__":
+        spec = g.get("__spec__")
+        if isinstance(spec, ModuleSpec) and spec.name:
+            return spec.name
+    return name
 
 
 def _excluded_prefixes() -> tuple[str, ...]:
@@ -302,7 +314,7 @@ class Tracer:
             code = c.__code__
             cid = self._codes.get(id(code), _MISSING)
             if cid is _MISSING:
-                cid = self._code_id(code, c.__module__)
+                cid = self._code_id(code, _module_of(c.__globals__))
             if cid is not None or code.co_filename.startswith(_PKG_DIR):  # traced itself, or our own machinery
                 return None
             return (c.__module__, c.__qualname__), ()
@@ -391,7 +403,7 @@ class Tracer:
             frame = _getframe(1)
             cid = self._codes.get(id(code), _MISSING)
             if cid is _MISSING:
-                cid = self._code_id(code, frame.f_globals.get("__name__"))
+                cid = self._code_id(code, _module_of(frame.f_globals))
             if cid is None:
                 return DISABLE
             stack = self._stacks.get(_get_ident())
@@ -506,7 +518,7 @@ class Tracer:
             cid = self._codes.get(id(code), _MISSING)
             frame = _getframe(1)
             if cid is _MISSING:
-                cid = self._code_id(code, frame.f_globals.get("__name__"))
+                cid = self._code_id(code, _module_of(frame.f_globals))
             if cid is None:
                 return DISABLE
             stack = self._stacks.get(_get_ident())
