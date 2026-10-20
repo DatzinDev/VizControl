@@ -6,6 +6,7 @@ See docs/components/analysis.md.
 
 from __future__ import annotations
 
+import difflib
 import fnmatch
 import json
 import re
@@ -407,6 +408,106 @@ def error_path(reader: Reader) -> dict | None:
         "locals": [_binding_view(b) for b in locals_at_raise],
         "recent_changes": recent[-5:],
         "chain": chain,
+    }
+
+
+# -- run comparison ------------------------------------------------------------------------------------------------
+
+ALIGN_LIMIT = 5_000  # calls per run between the common prefix and suffix fed to difflib, quadratic at worst
+
+
+def _signature(reader: Reader) -> list[dict]:
+    codes = {c["id"]: c for c in reader.codes()}
+    out = []
+    for cid, parent, start, end, outcome, seq, module, _, _, code_id in reader.all_calls():
+        out.append({"id": cid, "parent_id": parent, "module": module, "qualname": codes[code_id]["qualname"],
+                    "outcome": outcome, "duration_ns": end - start if end is not None else None, "seq": seq})
+    depth: dict[int, int] = {}
+    for c in out:  # pre-order: a parent comes before its children
+        c["depth"] = depth[c["id"]] = depth.get(c["parent_id"], -1) + 1 if c["parent_id"] is not None else 0
+    return out
+
+
+def _args(reader: Reader, call_id: int) -> dict[str, dict]:
+    return {b["name"]: json.loads(b["data"]) for b in reader.bindings(call_id) if b["kind"] == "arg"}
+
+
+def compare(a: Reader, b: Reader) -> dict:
+    """Why two runs took different paths (FR-ANA-7). Each run's calls in pre-order, as (depth, module, qualname), are
+    aligned with difflib; the first block that is not equal is the divergence. Reported: its parent call in both
+    runs, the calls only in A and only in B under it, the parent's argument differences and the source around the
+    lines where the children differ, which is usually the branch that decided. Outcomes are not part of the
+    alignment: a failing run's ancestors all raise, and they are still the same calls."""
+    sa, sb = _signature(a), _signature(b)
+    ka, kb = ([(c["depth"], c["module"], c["qualname"]) for c in side] for side in (sa, sb))
+    # The first divergence is where the common prefix ends: found in linear time. difflib only measures the middle
+    # (between the common prefix and suffix), capped, for the extent of that first block and the counts.
+    n = min(len(ka), len(kb))
+    pre = next((i for i in range(n) if ka[i] != kb[i]), n)
+    suf = 0
+    while suf < n - pre and ka[-1 - suf] == kb[-1 - suf]:
+        suf += 1
+    mid_a, mid_b = ka[pre:len(ka) - suf], kb[pre:len(kb) - suf]
+    capped = len(mid_a) > ALIGN_LIMIT or len(mid_b) > ALIGN_LIMIT
+    ops = difflib.SequenceMatcher(None, mid_a[:ALIGN_LIMIT], mid_b[:ALIGN_LIMIT], autojunk=False).get_opcodes()
+    summary = {
+        "matched": pre + suf + sum(i2 - i1 for tag, i1, i2, *_ in ops if tag == "equal"),
+        "only_a": sum(i2 - i1 for tag, i1, i2, *_ in ops if tag != "equal"),
+        "only_b": sum(j2 - j1 for tag, _, __, j1, j2 in ops if tag != "equal"),
+        "outcome_a": a.run()["outcome"], "outcome_b": b.run()["outcome"],
+        "truncated": capped,  # counts cover the first ALIGN_LIMIT calls after the divergence
+    }
+    first = next(((i1, i2, j1, j2) for tag, i1, i2, j1, j2 in ops if tag != "equal"), None)
+    if first is None:
+        return {"summary": summary, "divergence": None, "inferred": True}
+    i1, i2, j1, j2 = (pre + x for x in first)  # i1 == j1 == pre: the prefix is maximal
+    idx_a, idx_b = {c["id"]: i for i, c in enumerate(sa)}, {c["id"]: j for j, c in enumerate(sb)}
+    # The parent of the first differing call on each side; both lie in the common prefix, where index i in A is
+    # index i in B. The deeper one is where execution split first; the shallower difference is usually its
+    # consequence (B raised, so it never got further).
+    cands = [idx[side[k]["parent_id"]] for side, idx, k in ((sa, idx_a, i1), (sb, idx_b, j1))
+             if k < len(side) and side[k]["parent_id"] in idx]
+    pi = max(cands, key=lambda i: sa[i]["depth"], default=None)
+    to_b = {i: i for i in range(pre)}
+    path_a = []
+    i = pi
+    while i is not None:  # the parent and its ancestors, root first
+        path_a.insert(0, i)
+        i = idx_a.get(sa[i]["parent_id"])
+    ca, cb = (a.call(sa[pi]["id"]), b.call(sb[to_b[pi]]["id"])) if pi is not None else (None, None)
+    pid_a = sa[pi]["id"] if pi is not None else None
+    pid_b = sb[to_b[pi]]["id"] if pi is not None else None
+    only_a = [sa[i] for i in range(i1, i2) if sa[i]["parent_id"] == pid_a]
+    only_b = [sb[j] for j in range(j1, j2) if sb[j]["parent_id"] == pid_b]
+    for side, reader in ((only_a, a), (only_b, b)):
+        for c in side:
+            c["call_line"] = reader.call(c["id"])["call_line"]
+    args_a, args_b = (_args(a, ca["id"]), _args(b, cb["id"])) if ca else ({}, {})
+    arg_diff = [{"name": n, "same": args_a.get(n) == args_b.get(n),
+                 "a": preview(args_a[n]) if n in args_a else None, "b": preview(args_b[n]) if n in args_b else None,
+                 "changes": value_diff(args_a[n], args_b[n]) if n in args_a and n in args_b else []}
+                for n in list(args_a) + [n for n in args_b if n not in args_a]]
+    branch = None
+    lines = [c["call_line"] for c in only_a + only_b if c["call_line"]]
+    if ca and lines and ca["file_id"] and (src := a.source(ca["file_id"])):
+        lo, hi = max(min(lines) - 3, 1), max(lines) + 1
+        text = src.split("\n")
+        branch = {"file": ca["relpath"] or ca["path"], "first": lo,
+                  "lines": text[lo - 1:hi], "a_lines": sorted({c["call_line"] for c in only_a if c["call_line"]}),
+                  "b_lines": sorted({c["call_line"] for c in only_b if c["call_line"]})}
+    row = lambda c: {k: c[k] for k in ("id", "module", "qualname", "outcome", "duration_ns", "depth")}  # noqa: E731
+    return {
+        "summary": summary,
+        "divergence": {
+            "parent_a": ca and ca["id"], "parent_b": cb and cb["id"],
+            "parent": ca and {"qualname": ca["qualname"], "module": ca["module"], "file": ca["relpath"] or ca["path"],
+                              "line": ca["first_line"]},
+            "path": [{"a": row(sa[i]), "b": row(sb[to_b[i]])} for i in path_a],
+            "only_a": [{**row(c), "call_line": c["call_line"]} for c in only_a[:20]],
+            "only_b": [{**row(c), "call_line": c["call_line"]} for c in only_b[:20]],
+            "args": arg_diff, "branch": branch,
+        },
+        "inferred": True,
     }
 
 

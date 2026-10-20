@@ -103,6 +103,19 @@ def test_object_flow_finds_objects_nested_in_other_values(runs):
     assert flow["appearances"][0]["fields"] == [] and flow["appearances"][1]["changed"] == ["email", "id", "tier"]
 
 
+def test_compare_finds_where_two_runs_split(runs):
+    d = A.compare(runs["basic"], runs["vip"])
+    assert d["summary"]["outcome_a"] == "ok" and d["summary"]["outcome_b"] == "raised"
+    div = d["divergence"]
+    assert div["parent"]["qualname"] == "compute"  # where it split, not place_order where B stopped early
+    assert [p["a"]["qualname"] for p in div["path"]][-2:] == ["OrderService._build_order", "compute"]
+    assert div["only_a"] == [] and [c["qualname"] for c in div["only_b"]] == ["load_vip_rules", "apply_discount"]
+    order = next(x for x in div["args"] if x["name"] == "order")
+    assert order["changes"] == [{"path": ".customer.tier", "op": "changed", "before": "'basic'", "after": "'vip'"}]
+    assert any("tier == \"vip\"" in line for line in div["branch"]["lines"])
+    assert A.compare(runs["basic"], runs["basic"])["divergence"] is None
+
+
 def test_value_diff():
     a = {"t": "obj", "type": "T", "attrs": {"x": {"t": "int", "v": 1}, "gone": {"t": "none"}}}
     b = {"t": "obj", "type": "T", "attrs": {"x": {"t": "int", "v": 2}, "new": {"t": "str", "v": "s"}}}

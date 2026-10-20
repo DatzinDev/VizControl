@@ -86,6 +86,13 @@ def test_error_and_objects(base):
     assert none is None
 
 
+def test_compare(base):
+    _, d = api(base, "/api/compare?a=basic.vizc&b=nested%2Fvip.vizc")
+    assert d["divergence"]["parent"]["qualname"] == "compute"
+    status, _ = api(base, "/api/compare?a=basic.vizc&b=..%2Fsecret.txt")
+    assert status == 404
+
+
 def test_only_registered_runs_are_readable(base):
     for path in ("/api/runs/secret.txt", "/api/runs/..%2Fsecret.txt", "/api/runs/basic.vizc/calls/999999",
                  "/api/runs/basic.vizc/nope"):
