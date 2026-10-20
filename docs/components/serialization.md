@@ -59,9 +59,11 @@ The registry holds no strong references (NFR-SAFE-1) and is dropped at the end o
 
 Applied during encoding, in the traced process, before anything is queued for writing:
 
-- **Name rules**: case-insensitive regexes matched against the binding name, dict keys and attribute names.
-  Defaults: `pass(word)?`, `secret`, `token`, `api[_-]?key`, `auth(orization)?`, `cookie`, `session`,
-  `private[_-]?key`, `credential`. A match replaces the value with `{"t":"redacted"}`.
+- **Name rules**: case-insensitive regexes matched against whole segments of the binding name, dict keys and
+  attribute names (segments split on `_ - . space` and camelCase). `access_token`, `X-Api-Key` and `accessToken`
+  match `token`/`api[_-]?key`, while `author` and `tokens` don't. Defaults: `pass(word|wd|phrase)?`, `secret`,
+  `token`, `api[_-]?key`, `auth(orization)?`, `cookie`, `private[_-]?key`, `credential`. A match replaces the
+  value with `{"t":"redacted"}`.
 - **Value rules** (opt-in): regexes over string content, e.g. bearer tokens or card numbers. A match replaces only
   the string.
 - **Hook**: `redact = "pkg.module:function"` taking `(name, obj) -> bool` for anything rules can't express.
