@@ -46,8 +46,36 @@ _registry: dict[type, Callable[[Any], Any]] = {}
 
 
 def register(type_: type, fn: Callable[[Any], Any]) -> None:
-    """Register a serializer for `type_`. `fn(obj)` must return something JSON-encodable."""
+    """Show instances of `type_` (and subclasses) as `fn(obj)`: a dict becomes the object's fields, anything else
+    its value. The result is encoded like any value: bounded, redacted, comparable between calls."""
     _registry[type_] = fn
+
+
+HEAD = 5  # rows or items a built-in view shows
+
+
+def _dataframe(df) -> dict:
+    return {"shape": list(df.shape), "columns": {str(c): str(t) for c, t in df.dtypes.items()},
+            "head": df.head(HEAD).to_dict("records")}
+
+
+def _series(s) -> dict:
+    return {"name": s.name, "dtype": str(s.dtype), "len": len(s), "head": s.head(HEAD).tolist()}
+
+
+def _ndarray(a) -> dict:
+    return {"shape": list(a.shape), "dtype": str(a.dtype), "head": a[(slice(0, HEAD),) * a.ndim].tolist()}
+
+
+# Views for popular libraries, by type name so nothing is imported: they apply once the program has the library.
+# They call the library's own read-only methods (head, dtypes, tolist), unlike the plain object walk.
+BUILTIN_VIEWS: dict[str, Callable[[Any], Any]] = {
+    "pandas.DataFrame": _dataframe, "pandas.core.frame.DataFrame": _dataframe,  # pandas 3 and 2 names
+    "pandas.Series": _series, "pandas.core.series.Series": _series,
+    "pandas._libs.tslibs.timestamps._Timestamp": lambda t: t.isoformat(),
+    "numpy.ndarray": _ndarray,
+    "numpy.generic": lambda x: x.item(),
+}
 
 
 def load_callable(spec: str) -> Callable:
@@ -84,6 +112,7 @@ class Encoder:
         self._by_name = {name: load_callable(spec) for name, spec in v.serializers.items()}
         self._oids: dict[int, tuple[int, Any]] = {}
         self._kinds: dict[type, str] = {}
+        self._views: dict[type, Callable[[Any], Any]] = {}
         self._name_hits: dict[str, bool] = {}
         self._next_oid = itertools.count(1).__next__
 
@@ -135,8 +164,24 @@ class Encoder:
             self._truncated = True
         return Encoded(text, data.get("oid"), type_name(type(obj)), self._truncated, self._redacted)
 
+    def _view_for(self, t: type) -> Callable[[Any], Any] | None:
+        """The serializer for `t`, through its MRO: a `__vizcontrol__` method, `register()`, the config's
+        `serializers`, then the built-in views."""
+        for c in t.__mro__:
+            hook = c.__dict__.get("__vizcontrol__")
+            if hook is not None:
+                return lambda obj: hook.__get__(obj, t)()
+            fn = _registry.get(c) or self._by_name.get(type_name(c)) or BUILTIN_VIEWS.get(type_name(c))
+            if fn is not None:
+                return fn
+        return None
+
     def _classify(self, t: type) -> str:
         """How values of type `t` are encoded. Computed once per type: isinstance chains are the hot spot."""
+        view = self._view_for(t) if t not in _SCALARS and t is not str else None
+        if view is not None:
+            self._views[t] = view
+            return "view"
         if t in _SCALARS:
             return _SCALARS[t]
         if issubclass(t, str):
@@ -162,10 +207,6 @@ class Encoder:
             self._redacted = True
             return {"t": "redacted"}
         t = type(obj)
-        if _registry or self._by_name:
-            fn = _registry.get(t) or self._by_name.get(type_name(t))
-            if fn is not None:
-                return {"t": "custom", "type": type_name(t), "v": fn(obj)}
         kind = self._kinds.get(t)
         if kind is None:
             kind = self._kinds[t] = self._classify(t)
@@ -195,6 +236,8 @@ class Encoder:
             return {"t": "repr", "type": type_name(t), "v": f"{t.__qualname__}.{member}"}
         if kind == "opaque":
             return self._opaque(obj)
+        if kind == "view":
+            return self._viewed(obj, t, depth, seen)
 
         self._budget -= 1
         if self._budget < 0:
@@ -230,6 +273,29 @@ class Encoder:
             out["len"] = n
             self._truncated = True
         return out
+
+    def _viewed(self, obj, t: type, depth: int, seen: dict[int, int]) -> dict:
+        """An object shown through its serializer. A dict view is the object (fields and identity, so it can be
+        followed and diffed); anything else stands for its value. Views don't add a nesting level."""
+        try:
+            v = self._views[t](obj)
+        except Exception as e:  # a failing serializer must never break the traced program
+            return {"t": "opaque", "type": type_name(t), "error": type(e).__name__}
+        if not isinstance(v, dict):
+            out = {**self._enc(v, depth, None, seen), "type": type_name(t), "view": True}
+            out.pop("oid", None)  # the identity of a temporary result means nothing
+            return out
+        self._budget -= 1
+        try:
+            oid = self.object_id(obj)
+        except TypeError:
+            oid = None
+        if oid is not None and id(obj) in seen:
+            return {"t": "ref", "oid": oid}
+        seen[id(obj)] = oid
+        attrs = {str(k): self._enc(x, depth, str(k), seen) for k, x in itertools.islice(v.items(), self.max_items)}
+        return {"t": "obj", "type": type_name(t), "view": True, **({"oid": oid} if oid is not None else {}),
+                "attrs": attrs}
 
     def _str(self, s: str) -> dict:
         out = {"t": "str", "v": s[: self.max_str]}
@@ -269,6 +335,8 @@ class Encoder:
             slots = cls.__dict__.get("__slots__", ())
             for slot in (slots,) if isinstance(slots, str) else slots:
                 has_slots = True
+                if slot.startswith("__") and slot.endswith("__"):  # machinery (pydantic's __pydantic_*__), not state
+                    continue
                 desc = cls.__dict__.get(slot)
                 if isinstance(desc, types.MemberDescriptorType) and slot not in attrs:
                     try:

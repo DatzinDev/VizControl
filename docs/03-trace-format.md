@@ -148,7 +148,8 @@ optional for readers. v1 writes none and caches analysis in memory.
 | `opaque` | `{"t":"opaque","type":"socket.socket","oid":3}` | Type known, content not captured. |
 | `redacted` | `{"t":"redacted"}` | Content removed by a redaction rule. |
 | `trunc` | `{"t":"trunc"}` | Depth limit reached. |
-| `custom` | `{"t":"custom","type":"...","v":{...}}` | From a user-registered serializer (FR-VAL-5). |
+| any, `"view":true` | `{"t":"obj","oid":9,"type":"pandas.DataFrame","view":true,"attrs":{"shape":{...}}}` | From a serializer (FR-VAL-5): a dict result is the object's fields, with its identity; any other result is encoded as itself with the object's `type`. |
+| `custom` | `{"t":"custom","type":"...","v":{...}}` | Older files only: raw serializer output. |
 
 `oid` is the per-run object id (see [serialization](components/serialization.md)).
 

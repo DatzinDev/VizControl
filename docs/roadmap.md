@@ -14,7 +14,7 @@ The trace format and APIs are designed so none of them needs a breaking change.
 | 5 | Async capture (FR-CAP-12) | capture | Task creation/await causality via `asyncio` task hooks, so coroutines nest by logical caller. |
 | 6 | FastAPI/ASGI instrumentation (FR-RUN-5) | 5, runners | Middleware, one run per request, sampling or header trigger. |
 | 7 | Live view | storage, server | Server-sent events while a run is being written. |
-| 8 | Serializers for popular libraries | serialization | numpy, pandas, pydantic, SQLAlchemy models. Opt-in extras. |
+| 8 | Serializers for popular libraries | serialization | Done: `__vizcontrol__`, `register` through the MRO, built-in views for pandas and numpy, pydantic/dataclasses as fields. Pending: SQLAlchemy models. |
 | 9 | `settrace` backend for Python < 3.12 | capture | Emits the same records; slower, documented. |
 | 10 | Search index | storage | SQLite FTS5 over names and string values. |
 | 11 | Editor integration (VS Code) | server API | Open the viewer in a panel; "reveal call" ↔ "go to source". |

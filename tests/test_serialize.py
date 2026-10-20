@@ -1,6 +1,8 @@
 import json
 from decimal import Decimal
 
+import pytest
+
 from vizcontrol.config import Config, Redact, Values
 from vizcontrol.serialize import Encoder, _registry, preview, register
 
@@ -83,7 +85,8 @@ def test_safe_repr_custom_and_exceptions():
     assert enc(Decimal("1.5"))[0] == {"t": "repr", "type": "decimal.Decimal", "v": "Decimal('1.5')"}
     register(complex, lambda c: [c.real, c.imag])
     try:
-        assert enc(2j)[0]["t"] == "custom"
+        assert enc(2j)[0] == {"t": "list", "items": [{"t": "float", "v": 0.0}, {"t": "float", "v": 2.0}],
+                              "type": "complex", "view": True}
     finally:
         _registry.pop(complex)
     data, _ = enc(ValueError("bad", 3))
@@ -98,3 +101,62 @@ def test_preview():
 def test_node_budget():
     data, r = enc([[i] for i in range(40)], max_nodes=10, max_items=50)
     assert sum(1 for i in data["items"] if i["t"] == "trunc") == 31 and r.truncated
+
+
+class Money:
+    def __init__(self, cents, currency, password):
+        self.cents, self.currency, self.password = cents, currency, password
+
+    def __vizcontrol__(self):
+        return {"amount": self.cents / 100, "currency": self.currency, "password": self.password}
+
+
+class Rich(Money):
+    pass
+
+
+class Broken:
+    def __vizcontrol__(self):
+        raise RuntimeError("nope")
+
+
+def test_views_are_objects_with_identity_and_still_redacted():
+    m = Rich(1250, "MXN", "hunter2")
+    e = Encoder(Config())
+    a, b = json.loads(e.encode(m).data), json.loads(e.encode([m, m]).data)
+    assert a["t"] == "obj" and a["view"] and a["type"] == "test_serialize.Rich"  # subclasses use the hook too
+    assert a["attrs"]["amount"] == {"t": "float", "v": 12.5} and a["attrs"]["password"] == {"t": "redacted"}
+    assert b["items"][0]["oid"] == a["oid"] and b["items"][1] == {"t": "ref", "oid": a["oid"]}
+    assert preview(a) == "Rich{amount: 12.5, currency: 'MXN', password: ‹redacted›}"
+    assert enc(Broken())[0] == {"t": "opaque", "type": "test_serialize.Broken", "error": "RuntimeError"}
+
+
+def test_library_views():
+    import dataclasses
+
+    np = pytest.importorskip("numpy")
+    pd = pytest.importorskip("pandas")
+    pydantic = pytest.importorskip("pydantic")
+
+    df = pd.DataFrame({"id": [1, 2, 3], "name": ["a", "b", "c"]})
+    d, _ = enc(df)
+    assert d["type"].endswith("DataFrame") and d["view"] and "oid" in d
+    assert d["attrs"]["shape"]["items"] == [{"t": "int", "v": 3}, {"t": "int", "v": 2}]
+    assert preview(d["attrs"]["columns"]).startswith("{'id': 'int64', 'name': ")  # object or str by version
+    assert enc(pd.Timestamp("2026-01-02"))[0]["v"] == "2026-01-02T00:00:00"
+    assert preview(d["attrs"]["head"]["items"][0]) == "{'id': 1, 'name': 'a'}"  # numpy scalars as plain values
+    assert enc(np.int64(7))[0] == {"t": "int", "v": 7, "type": "numpy.int64", "view": True}
+    arr, _ = enc(np.zeros((100, 100)))
+    assert arr["attrs"]["shape"]["items"][0]["v"] == 100 and len(arr["attrs"]["head"]["items"]) == 5
+
+    class User(pydantic.BaseModel):
+        name: str
+        age: int
+
+    @dataclasses.dataclass(slots=True)
+    class Point:
+        x: int
+        y: int
+
+    assert set(enc(User(name="ana", age=3))[0]["attrs"]) == {"name", "age"}  # no __pydantic_*__ machinery
+    assert set(enc(Point(1, 2))[0]["attrs"]) == {"x", "y"}
