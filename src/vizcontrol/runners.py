@@ -30,14 +30,24 @@ class _Terminated(BaseException):
     """Raised by our SIGTERM handler so the run is closed as 'unfinished' instead of being lost."""
 
 
-def default_path(out_dir: str, target: str) -> Path:
-    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
-    slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", os.path.basename(target.rstrip("/")) or "run").strip("-")[:60]
-    d = Path(out_dir)
+def slug(text: str, limit: int = 60) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "-", text).strip("-")[:limit] or "run"
+
+
+def stamp() -> str:
+    return datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
+
+
+def ensure_dir(d: Path) -> Path:
+    """Create the runs directory; a fresh one gets a .gitignore so traces never end up in git."""
     if not d.exists():
         d.mkdir(parents=True)
         (d / ".gitignore").write_text("*\n")
-    return d / f"{stamp}-{slug}.vizc"
+    return d
+
+
+def default_path(out_dir: str, target: str) -> Path:
+    return ensure_dir(Path(out_dir)) / f"{stamp()}-{slug(os.path.basename(target.rstrip('/')))}.vizc"
 
 
 class Run:

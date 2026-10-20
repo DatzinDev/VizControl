@@ -13,6 +13,9 @@ dependencies = []
 [project.scripts]
 vizcontrol = "vizcontrol.cli:main"
 
+[project.entry-points.pytest11]
+vizcontrol = "vizcontrol.pytest_plugin"
+
 [dependency-groups]
 dev = ["pytest>=8"]
 

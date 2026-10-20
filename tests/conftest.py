@@ -15,3 +15,6 @@ def runs_dir(tmp_path_factory) -> Path:
         subprocess.run([sys.executable, "-m", "vizcontrol", "run", "-o", str(d / f"{tier}.vizc"), "checkout.py", tier],
                        cwd=SHOP, capture_output=True, timeout=60)
     return d
+
+
+pytest_plugins = ["pytester"]
