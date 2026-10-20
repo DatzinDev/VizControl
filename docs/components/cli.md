@@ -69,7 +69,7 @@ max_items = 20
 max_str = 200
 max_value_bytes = 65_536
 max_nodes = 100                 # per value: bounds the cost of each binding
-max_per_function = 1000         # calls of one function with values recorded; the rest keep structure only
+max_per_function = 100          # calls of one function with values recorded; the rest keep structure only
 safe_repr_types = ["decimal.Decimal", "uuid.UUID"]
 serializers = { "numpy.ndarray" = "mypkg.viz:ndarray" }
 
