@@ -236,25 +236,31 @@ class Stager:
         return head
 
 
-def _last_end(reader: Reader, rows: list[tuple]) -> int:
-    """When calls still open as tracing stopped (max_calls, a killed process) ended at the latest: the run's end."""
-    return reader.run()["ended_ns"] or max((r[3] for r in rows if r[3] is not None), default=0)
+def _ends(rows: list[tuple]) -> dict[int, int]:
+    """call id -> end, for `Reader.all_calls()` rows. A call with no end (open when tracing stopped at max_calls or
+    a kill, a generator never run to the end) ends at the last thing observed inside it."""
+    ends: dict[int, int] = {}
+    for cid, parent, start, end, *_ in reversed(rows):  # children before their parents
+        e = ends[cid] = end if end is not None else max(ends.get(cid, start), start)
+        if parent is not None and e > ends.get(parent, 0):
+            ends[parent] = e
+    return ends
 
 
 def stages(reader: Reader, heads: frozenset | None = None, depth: int | None = None) -> dict:
     """Stage graph for the Level-1 overview (FR-ANA-2). One pass over all calls."""
     rows = reader.all_calls()
     stage_by_call = Stager(reader, heads, depth).assign(rows)
-    last = _last_end(reader, rows)
+    ends = _ends(rows)
     dur: dict[int, int] = {}
     child_dur: dict[int, int] = defaultdict(int)
     nodes: dict[str, dict] = {}
     edges: dict[tuple[str, str], dict] = {}
     roots: list[str] = []
     inside: dict[int, frozenset] = {}  # call -> stages open on its path, so a re-entered stage counts its time once
-    for cid, parent, start, end, outcome, seq, module, observed, kind, _ in rows:
+    for cid, parent, start, _, outcome, seq, module, observed, kind, _ in rows:
         stage = stage_by_call[cid]
-        d = dur[cid] = (end if end is not None else max(last, start)) - start
+        d = dur[cid] = ends[cid] - start
         n = nodes.get(stage)
         if n is None:
             n = nodes[stage] = {"name": stage, "calls": 0, "total_ns": 0, "self_ns": 0, "raised": 0,
@@ -398,7 +404,7 @@ def stage_detail(reader: Reader, stage: str, heads: frozenset | None = None, dep
     codes = {c["id"]: c for c in reader.codes()}
     rows = reader.all_calls()
     stage_by_call = Stager(reader, heads, depth).assign(rows)
-    last = _last_end(reader, rows)
+    ends = _ends(rows)
     inside: dict[int, bool] = {}  # call -> the stage is open on its path: its time is counted once, where entered
     code_by_call: dict[int, int] = {}
     dur: dict[int, int] = {}
@@ -408,11 +414,11 @@ def stage_detail(reader: Reader, stage: str, heads: frozenset | None = None, dep
     incoming: dict[tuple, int] = defaultdict(int)
     outgoing: dict[tuple, int] = defaultdict(int)
     total = 0
-    for cid, parent, start, end, outcome, seq, module, observed, kind, code_id in rows:
+    for cid, parent, start, _, outcome, seq, module, observed, kind, code_id in rows:
         s = stage_by_call[cid]
         code_by_call[cid] = code_id
         inside[cid] = s == stage or inside.get(parent, False)
-        d = dur[cid] = (end if end is not None else max(last, start)) - start
+        d = dur[cid] = ends[cid] - start
         if parent is not None:
             child_dur[parent] += d
         pstage = stage_by_call.get(parent)
