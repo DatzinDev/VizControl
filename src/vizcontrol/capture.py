@@ -7,6 +7,7 @@ The hot paths (start/return/call) are deliberately inlined: each event costs a f
 
 from __future__ import annotations
 
+import contextlib
 import fnmatch
 import hashlib
 import json
@@ -119,10 +120,8 @@ def _message(exc: BaseException, library_str: bool) -> str:
     args = BaseException.args.__get__(exc)
     simple = all(type(a) in (str, int, float, bool, type(None), bytes) for a in args)
     if library_str and (not simple or not args) and type(exc).__str__ is not BaseException.__str__:
-        try:
+        with contextlib.suppress(Exception):  # a broken __str__: fall back to the args
             return str(exc)
-        except Exception:
-            pass
     if simple:
         return BaseException.__str__(exc)
     return ", ".join(type_name(type(a)) for a in args)

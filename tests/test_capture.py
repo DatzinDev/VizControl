@@ -276,13 +276,12 @@ class Loud(Exception):
 
 
 def fail_two_ways():
+    import contextlib
     import subprocess
 
     for exc in (subprocess.CalledProcessError(2, ["make", "all"]), Loud(["not", "simple"])):
-        try:
+        with contextlib.suppress(Exception):
             raise exc
-        except Exception:
-            pass
 
 
 def test_messages_come_from_library_str_but_never_the_project_s(tmp_path):
