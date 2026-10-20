@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { api, Binding, CallDetail, Change, Enc, ErrorPath, ObjectFlow, RunSummary, Source, StageNode, Value } from "./api";
-import { changeText, ms, outcomeIcon, runLabel } from "./format";
+import { api, Binding, CallDetail, Change, Enc, ErrorPath, ObjectFlow, ObjectSummary, RunSummary, Source, StageNode, Value } from "./api";
+import { changeText, ms, outcomeIcon, runLabel, shortName } from "./format";
 
 function useLoad<T>(load: () => Promise<T>, deps: unknown[]): T | undefined {
   const [value, setValue] = useState<T>();
@@ -225,7 +225,7 @@ function children(d: Enc): [string, Enc][] {
   return [];
 }
 
-function ValueNode({ label, d, depth }: { label: string; d: Enc; depth: number }) {
+function ValueNode({ label, d, depth, onFollow }: { label: string; d: Enc; depth: number; onFollow: (oid: number) => void }) {
   const kids = children(d);
   const [open, setOpen] = useState(depth < 2);
   const more = d.len != null && d.len > kids.length ? d.len - kids.length : 0;
@@ -238,9 +238,9 @@ function ValueNode({ label, d, depth }: { label: string; d: Enc; depth: number }
           <span className="k">{label}</span>
         )}
         <span className={d.t === "redacted" ? "unfinished" : d.t === "trunc" ? "muted" : undefined}>{previewEnc(d)}</span>
-        {d.oid != null && <span className="oid">#{d.oid}</span>}
+        {d.oid != null && <button className="oid" onClick={() => onFollow(d.oid as number)} title="Follow in Data Flow">#{d.oid}</button>}
       </div>
-      {open && kids.map(([k, v], i) => <ValueNode key={i} label={k} d={v} depth={depth + 1} />)}
+      {open && kids.map(([k, v], i) => <ValueNode key={i} label={k} d={v} depth={depth + 1} onFollow={onFollow} />)}
       {open && more > 0 && <div className="row muted" style={{ "--d": depth + 1 } as React.CSSProperties}>… {more} more not captured</div>}
     </>
   );
@@ -261,8 +261,8 @@ function ChangeList({ changes, onOpenCall }: { changes: Change[]; onOpenCall: (i
   );
 }
 
-export function ValueInspector(props: { run: string; binding: Binding; onBack: () => void; onOpenCall: (id: number) => void }) {
-  const { run, binding, onBack, onOpenCall } = props;
+export function ValueInspector(props: { run: string; binding: Binding; onBack: () => void; onOpenCall: (id: number) => void; onFollow: (oid: number) => void }) {
+  const { run, binding, onBack, onOpenCall, onFollow } = props;
   const value = useLoad<Value>(() => api.value(run, binding.value_id), [run, binding.value_id]);
   const flow = useLoad<ObjectFlow | undefined>(
     async () => (binding.object_id != null ? api.object(run, binding.object_id) : undefined),
@@ -278,14 +278,17 @@ export function ValueInspector(props: { run: string; binding: Binding; onBack: (
       </div>
       <div className="muted" style={{ fontSize: 12 }}>{binding.kind} value{binding.seq != null ? ` · seq ${binding.seq}` : ""}</div>
       <Section title="Value" className="box">
-        {value ? <div className="vtree"><ValueNode label={binding.name ?? "value"} d={value.data} depth={0} /></div> : <span className="muted">Loading…</span>}
+        {value ? <div className="vtree"><ValueNode label={binding.name ?? "value"} d={value.data} depth={0} onFollow={onFollow} /></div> : <span className="muted">Loading…</span>}
       </Section>
+      {binding.object_id != null && (
+        <button className="link" onClick={() => onFollow(binding.object_id!)}>Follow #{binding.object_id} in Data Flow →</button>
+      )}
       {flow && (
-        <Section title={`History · ${flow.appearances.length} appearances`}>
+        <Section title={`History · ${flow.total} appearances`}>
           {flow.appearances.map((a, i) => (
             <button key={i} className="binding" onClick={() => onOpenCall(a.call_id)}>
               <span className="k">{a.seq}</span>
-              <span className="v">{a.role} {a.role === "return" ? "←" : "→"} {a.qualname}</span>
+              <span className="v">{a.path ? `in ${a.name ?? a.role}${a.path}` : a.role} {a.role === "return" ? "←" : "→"} {a.qualname}</span>
             </button>
           ))}
         </Section>
@@ -300,6 +303,59 @@ export function ValueInspector(props: { run: string; binding: Binding; onBack: (
           ┄ Appearances are observed bindings. A change is attributed to the calls between two appearances (inferred).
         </div>
       )}
+    </>
+  );
+}
+
+// -- data flow ----------------------------------------------------------------------------------------------------
+
+export function ObjectInspector(props: { run: string; flow: ObjectFlow; onOpenCall: (id: number) => void; onFollow: (oid: number) => void }) {
+  const { run, flow, onOpenCall, onFollow } = props;
+  const others = useLoad<ObjectSummary[]>(() => api.objects(run), [run]);
+  const steps = flow.appearances;
+  const first = steps[0], last = steps[steps.length - 1];
+  const calls = new Set(steps.map((a) => a.call_id)).size;
+  const modules = new Set(steps.map((a) => a.module)).size;
+  const fields = new Set(flow.changes.flatMap((c) => c.changes.map((d) => d.path))).size;
+  const nested = [...new Set(steps.filter((a) => a.path).map((a) => `${a.name ?? a.role}${a.path}`))];
+  return (
+    <>
+      <div className="chip" style={{ background: "none", padding: 0, gap: 8 }}>
+        <span className="title-lg">{flow.name ?? shortName(flow.type ?? "object")}</span>
+        <span className="oid">#{flow.object_id}</span>
+        <span className="mono muted" style={{ fontSize: 11 }}>{flow.type}</span>
+      </div>
+      {first && (
+        <Section title="Lifecycle">
+          <KV rows={[
+            ["first seen", <button className="link" onClick={() => onOpenCall(first.call_id)}>{shortName(first.qualname)} · seq {first.seq}</button>],
+            ["appearances", `${flow.total} · ${calls} calls · ${modules} modules`],
+            ["changes", flow.changes.length ? <span className="unfinished">{fields} fields in {flow.changes.length} steps</span> : "none observed"],
+            ["last seen", <button className="link" onClick={() => onOpenCall(last.call_id)}>{last.role} of {shortName(last.qualname)}</button>],
+            ...(nested.length ? [["nested in", nested.slice(0, 3).join(", ")] as [string, string]] : []),
+          ]} />
+          {flow.total > steps.length && <div className="muted" style={{ fontSize: 12 }}>Showing the first {steps.length}.</div>}
+        </Section>
+      )}
+      {flow.changes.length > 0 && (
+        <Section title="Changes" className="box warn">
+          <ChangeList changes={flow.changes} onOpenCall={onOpenCall} />
+        </Section>
+      )}
+      {others && others.length > 1 && (
+        <Section title="Other objects in this run">
+          {others.filter((o) => o.object_id !== flow.object_id).slice(0, 8).map((o) => (
+            <button key={o.object_id} className="binding" onClick={() => onFollow(o.object_id)}>
+              <span className="k">{o.name ?? shortName(o.type)}</span>
+              <span className="v"><span className="oid">#{o.object_id}</span> <span className="muted">{o.count} bindings</span></span>
+            </button>
+          ))}
+        </Section>
+      )}
+      <div className="box dashed muted" style={{ fontSize: 12 }}>
+        ┄ Steps are observed bindings, including the object nested inside another value. A change is attributed to
+        the calls between two steps (inferred).
+      </div>
     </>
   );
 }

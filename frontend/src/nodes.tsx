@@ -8,7 +8,7 @@ export const MORE_H = 30;
 export const STAGE_W = 150;
 export const STAGE_H = 92;
 
-const handles = (
+export const handles = (
   <>
     <Handle type="target" position={Position.Left} />
     <Handle type="source" position={Position.Right} />

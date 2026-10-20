@@ -159,11 +159,37 @@ export interface ErrorPath {
   chain: { id: number; type: string; message: string }[];
 }
 
+export interface Appearance {
+  call_id: number;
+  qualname: string;
+  module: string | null;
+  seq: number;
+  role: string;
+  name: string | null;
+  path: string;  // where the object sits inside the bound value: "" (the value itself), ".customer", "[0]"
+  value_id: number;
+  type: string;
+  preview: string;
+  fields: [string, string][];
+  changed: string[];  // fields that differ from the previous full appearance
+}
+
 export interface ObjectFlow {
   object_id: number;
   type: string | null;
-  appearances: { call_id: number; qualname: string; seq: number; role: string; name: string | null; value_id: number; preview: string }[];
+  name: string | null;
+  total: number;
+  appearances: Appearance[];
+  links: { from: number; to: number; seq: number; inferred: boolean }[];
   changes: Change[];
+}
+
+export interface ObjectSummary {
+  object_id: number;
+  type: string;
+  name: string | null;
+  count: number;
+  first_seq: number;
 }
 
 export interface Hit {
@@ -205,6 +231,7 @@ export const api = {
   path: (r: string, id: number) => get<CallNode[]>(`${run(r)}/calls/${id}/path`),
   value: (r: string, id: number) => get<Value>(`${run(r)}/values/${id}`),
   object: (r: string, oid: number) => get<ObjectFlow>(`${run(r)}/objects/${oid}`),
+  objects: (r: string) => get<ObjectSummary[]>(`${run(r)}/objects`),
   error: (r: string) => get<ErrorPath | null>(`${run(r)}/error`),
   source: (r: string, fileId: number) => get<Source>(`${run(r)}/source/${fileId}`),
   search: (r: string, q: string) => get<Hit[]>(`${run(r)}/search?q=${encodeURIComponent(q)}`),

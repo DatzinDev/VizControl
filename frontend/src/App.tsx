@@ -1,24 +1,27 @@
 import { ReactFlowProvider } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, Binding, CallNode, ErrorPath, RunSummary, StageGraph } from "./api";
+import { api, Binding, CallNode, ErrorPath, ObjectFlow, ObjectSummary, RunSummary, StageGraph } from "./api";
 import { CallTreeView } from "./CallTreeView";
+import { DataFlowView, ObjectPicker } from "./DataFlowView";
 import { ms, outcomeIcon, runLabel, shortName } from "./format";
-import { CallInspector, RunInspector, StageInspector, ValueInspector } from "./Inspector";
+import { CallInspector, ObjectInspector, RunInspector, StageInspector, ValueInspector } from "./Inspector";
 import { SearchPalette } from "./SearchPalette";
 import { StageView } from "./StageView";
 import { callKey, Key, useCallTree } from "./useCallTree";
 
-type View = "stages" | "calls";
+type View = "stages" | "calls" | "flow";
 type Selection = { kind: "stage"; name: string } | { kind: "call"; id: number } | null;
 
-function readHash(): { run: string | null; call: number | null } {
+function readHash(): { run: string | null; call: number | null; obj: number | null } {
   const p = new URLSearchParams(location.hash.slice(1));
-  return { run: p.get("run"), call: p.get("call") ? Number(p.get("call")) : null };
+  const num = (k: string) => (p.get(k) ? Number(p.get(k)) : null);
+  return { run: p.get("run"), call: num("call"), obj: num("obj") };
 }
 
 export function App() {
   const initial = useMemo(readHash, []);
   const pendingCall = useRef(initial.call);  // the URL's call, opened once its run has loaded
+  const pendingObj = useRef(initial.obj);  // likewise for the object followed in Data Flow
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [runId, setRunId] = useState<string | null>(initial.run);
   const [view, setView] = useState<View>("stages");
@@ -26,6 +29,9 @@ export function App() {
   const [error, setError] = useState<ErrorPath | null | undefined>(undefined);
   const [selection, setSelection] = useState<Selection>(null);
   const [value, setValue] = useState<Binding | null>(null);
+  const [followed, setFollowed] = useState<number | null>(null);
+  const [flow, setFlow] = useState<ObjectFlow | null>(null);
+  const [objects, setObjects] = useState<ObjectSummary[] | undefined>(undefined);
   const [centerOn, setCenterOn] = useState<Key | null>(null);
   const [searching, setSearching] = useState(false);
   const [focusError, setFocusError] = useState(true);
@@ -52,6 +58,26 @@ export function App() {
     [tree.reveal],
   );
 
+  const follow = useCallback((oid: number) => {
+    setFollowed(oid);
+    setValue(null);
+    setView("flow");
+  }, []);
+
+  useEffect(() => {
+    setFlow(null);
+    if (!runId || followed == null) return;
+    let live = true;
+    api.object(runId, followed).then((f) => live && setFlow(f)).catch((e) => setProblem(String(e)));
+    return () => {
+      live = false;
+    };
+  }, [runId, followed]);
+
+  useEffect(() => {
+    if (runId && view === "flow" && objects === undefined) api.objects(runId).then(setObjects).catch((e) => setProblem(String(e)));
+  }, [runId, view, objects]);
+
   // A run opens on its failure if it has one (FR-VIZ-8), else on the stage overview.
   useEffect(() => {
     if (!runId) return;
@@ -61,14 +87,18 @@ export function App() {
     setSelection(null);
     setValue(null);
     setCenterOn(null);
+    setFollowed(null);
+    setObjects(undefined);
     let live = true;
     Promise.all([api.stages(runId), api.error(runId)]).then(([g, err]) => {
       if (!live) return;
       setStages(g);
       setError(err);
       const pending = runId === initial.run ? pendingCall.current : null;
-      pendingCall.current = null;
-      if (pending) openCall(pending);
+      const pendingFlow = runId === initial.run ? pendingObj.current : null;
+      pendingCall.current = pendingObj.current = null;
+      if (pendingFlow) follow(pendingFlow);
+      else if (pending) openCall(pending);
       else if (err) openCall(err.origin.id);
       else setView("stages");
     }).catch((e) => setProblem(String(e)));
@@ -80,9 +110,10 @@ export function App() {
   useEffect(() => {
     const p = new URLSearchParams();
     if (runId) p.set("run", runId);
-    if (selection?.kind === "call") p.set("call", String(selection.id));
+    if (view === "flow" && followed != null) p.set("obj", String(followed));
+    else if (selection?.kind === "call") p.set("call", String(selection.id));
     history.replaceState(null, "", `#${p}`);
-  }, [runId, selection]);
+  }, [runId, selection, view, followed]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -92,7 +123,7 @@ export function App() {
       }
       if (e.key === "Escape" && !searching) {
         if (value) setValue(null);
-        else if (view === "calls") setView("stages");
+        else if (view !== "stages") setView("stages");
       }
     };
     window.addEventListener("keydown", onKey);
@@ -103,16 +134,19 @@ export function App() {
   const selectedCall: CallNode | undefined =
     selection?.kind === "call" ? tree.callItem(callKey(selection.id)) ?? error?.path.find((c) => c.id === selection.id) : undefined;
   const isFailureView = view === "calls" && selection?.kind === "call" && error?.origin.id === selection.id;
-  const level = value ? "L4 · Value" : view === "stages" ? "L1 · Overview" : isFailureView ? "L3 · Failure" : selection ? "L3 · Function" : "L2 · Calls";
+  const level = view === "flow" ? "Data Flow" : value ? "L4 · Value" : view === "stages" ? "L1 · Overview" : isFailureView ? "L3 · Failure" : selection ? "L3 · Function" : "L2 · Calls";
 
   const crumbs: { label: string; onClick?: () => void }[] = [{ label: "Run", onClick: () => { setView("stages"); setSelection(null); setValue(null); } }];
   if (run) crumbs.push({ label: runLabel(run), onClick: () => { setView("stages"); setSelection(null); setValue(null); } });
-  if (selection?.kind === "stage") crumbs.push({ label: selection.name });
-  if (selectedCall) {
+  if (view === "flow") {
+    crumbs.push({ label: "Data Flow", onClick: () => setFollowed(null) });
+    if (flow) crumbs.push({ label: `${flow.name ?? shortName(flow.type ?? "object")} #${flow.object_id}` });
+  } else if (selection?.kind === "stage") crumbs.push({ label: selection.name });
+  if (view !== "flow" && selectedCall) {
     if (selectedCall.stage) crumbs.push({ label: selectedCall.stage });
     crumbs.push({ label: shortName(selectedCall.qualname), onClick: () => setValue(null) });
   }
-  if (value) crumbs.push({ label: `${value.name ?? value.kind}${value.object_id != null ? ` #${value.object_id}` : ""}` });
+  if (view !== "flow" && value) crumbs.push({ label: `${value.name ?? value.kind}${value.object_id != null ? ` #${value.object_id}` : ""}` });
 
   return (
     <div className="app">
@@ -126,8 +160,9 @@ export function App() {
           </div>
         )}
         <div className="tabs" role="tablist">
-          <button className="active">Execution Flow</button>
-          <button disabled title="Coming next: object lifecycles across calls">Data Flow</button>
+          <button className={view !== "flow" ? "active" : ""} onClick={() => setView(selection?.kind === "call" ? "calls" : "stages")}>Execution Flow</button>
+          <button className={view === "flow" ? "active" : ""} onClick={() => runId && (value?.object_id != null ? follow(value.object_id) : setView("flow"))}
+            title="Follow one object across calls">Data Flow</button>
           <button disabled title="Coming next: compare two runs">Diff</button>
         </div>
         <div className="spacer" />
@@ -211,17 +246,28 @@ export function App() {
               </ReactFlowProvider>
             </>
           )}
-          <div className="legend">
+          {!problem && view === "flow" && (
+            flow ? (
+              <>
+                <div className="hint">Following <span className="flow mono">{flow.name ?? shortName(flow.type ?? "object")} #{flow.object_id}</span> · Δ field changed since the previous step · click a step to open the call</div>
+                <DataFlowView flow={flow} onOpenCall={openCall} />
+              </>
+            ) : followed == null ? <ObjectPicker objects={objects} onFollow={follow} /> : <div className="empty">Loading…</div>
+          )}
+          {view !== "flow" && <div className="legend">
             <span><span className="ok">●</span> ok</span>
             <span><span className="raised">⚠</span> raised</span>
             <span><span className="unfinished">◌</span> unfinished</span>
             <span>▒ not observed</span>
             <span>┄ inferred</span>
-          </div>
+          </div>}
         </section>
 
         <aside className="panel inspector">
-          {runId && value && <ValueInspector run={runId} binding={value} onBack={() => setValue(null)} onOpenCall={openCall} />}
+          {runId && view === "flow" && flow && <ObjectInspector run={runId} flow={flow} onOpenCall={openCall} onFollow={follow} />}
+          {view === "flow" && !flow && run && <RunInspector run={run} error={error} onOpenCall={openCall} />}
+          {view !== "flow" && <>
+          {runId && value && <ValueInspector run={runId} binding={value} onBack={() => setValue(null)} onOpenCall={openCall} onFollow={follow} />}
           {runId && !value && selection?.kind === "call" && (
             <CallInspector run={runId} id={selection.id} error={error} onOpenCall={openCall} onOpenValue={setValue} />
           )}
@@ -229,6 +275,7 @@ export function App() {
             <StageInspector stage={stages.nodes.find((n) => n.name === selection.name)!} onOpenCall={openCall} />
           )}
           {!value && !selection && run && <RunInspector run={run} error={error} onOpenCall={openCall} />}
+          </>}
         </aside>
       </div>
 

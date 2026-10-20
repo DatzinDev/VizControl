@@ -14,10 +14,11 @@ lays out, renders and navigates. Visual concept: [UI design](../ui-design.md).
 |---|---|
 | Shell (top bar, breadcrumbs, runs/stages/filters panel, inspector), dark and light themes from the Penpot tokens | Timeline strip |
 | Level 1 stage graph with main path. Double-click (or the stage list) reveals the stage's first call | Level 2 as module › class compound nodes: the call tree is used for Level 2 for now |
-| Level 3 call tree: lazy expansion, `×N` groups with paged members, opaque/unfinished/raised states | Data Flow and Diff tabs (disabled) |
+| Level 3 call tree: lazy expansion, `×N` groups with paged members, opaque/unfinished/raised states | Diff tab (disabled) |
 | Failure mode: opens on the origin, red error path, off-path dimming, exception/locals/last-changes/traceback/source | "hidden (N)" stubs for filtered nodes. The only filter today hides library leaves |
 | Level 4 value tree, object history and field-level changes | Source panel beyond the inspector excerpt |
-| ⌘K search; URL hash keeps `run` and `call` | |
+| ⌘K search; URL hash keeps `run` and `call` (or `obj` in Data Flow) | |
+| Data Flow: object picker, lanes per module, Δ on changed fields, object inspector, follow from any oid chip | |
 
 ## Requirements covered
 
@@ -70,9 +71,13 @@ click goes up one level.
 - **Failure mode** (FR-VIZ-8): when `run.outcome` is `raised` or `assertion_failed`, the viewer opens at Level 3 on
   the origin call. The error path is highlighted from root to origin, propagation is shown with red edges, and the
   inspector opens the exception panel (type, message, traceback with observed frames linked, recent changes).
-- **Data Flow** (FR-VIZ-10, Should): pick a value, and the canvas shows the calls it passed through as a lane
-  diagram (time left → right, one lane per call path), with change markers. Clicking a step jumps to that call in
-  Execution Flow and back.
+- **Data Flow** (FR-VIZ-10, Should): follow one object. Without one, the canvas lists the run's most seen objects
+  to pick from. Any oid chip in the value tree, or "Follow in Data Flow" in the value inspector, opens it too. The
+  canvas shows each appearance as a step, left → right in `seq` order, one lane per module. A step shows its role,
+  the call, the object's fields and Δ on the fields that changed since the previous step; a step where the object
+  sits inside another value says so (`in order.customer`). Clicking a step opens its call in Execution Flow, and the
+  Data Flow tab goes back to the object. The inspector shows the lifecycle, the changes, other objects in the run
+  and the provenance note. The canvas starts at a readable zoom from the first step instead of fitting a long flow.
 - **Diff** (FR-VIZ-11, Later): two runs side by side, aligned, the divergence point marked and synced selection.
 - **Source panel** (FR-VIZ-9, Should): read-only code view of the call's file with the call/raise line
   highlighted, from `/source`.
