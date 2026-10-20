@@ -378,9 +378,17 @@ class Reader:
             "MIN(call.seq_start) AS first_seq, SUM(call.outcome = 'raised') AS raised "
             "FROM call JOIN code ON code.id = call.code_id GROUP BY code.id ORDER BY first_seq")
         edges = self._all(
-            "SELECT p.code_id AS source, c.code_id AS target, COUNT(*) AS calls, MIN(c.seq_start) AS first_seq "
+            "SELECT p.code_id AS source, c.code_id AS target, COUNT(*) AS calls, MIN(c.seq_start) AS first_seq, "
+            "MIN(c.id) AS first_call "
             "FROM call c JOIN call p ON p.id = c.parent_id GROUP BY 1, 2 ORDER BY first_seq")
         return nodes, edges
+
+    def first_binding_with(self, text: str) -> dict | None:
+        """The earliest binding whose value holds `text` (a function's `"label":"..."`), with its call."""
+        return self._one(
+            "SELECT binding.call_id, binding.seq, binding.kind, binding.name, value.data, code.qualname FROM binding "
+            "JOIN value ON value.id = binding.value_id JOIN call ON call.id = binding.call_id "
+            "JOIN code ON code.id = call.code_id WHERE instr(value.data, ?) > 0 ORDER BY binding.seq LIMIT 1", (text,))
 
     def bindings(self, call_id: int) -> list[dict]:
         return self._all(
