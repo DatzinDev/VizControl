@@ -119,6 +119,14 @@ def _call(r: Reader, call_id: int, stage_of) -> dict:
                           "line": c["call_line"]}
     if c["exception_id"] is not None:
         node["exception"] = r.exception(c["exception_id"])
+    node["started_by"] = None
+    if c["parent_id"] is None:  # a thread's root call: which Thread.start launched it (inferred)
+        start_id = A.thread_starts(r).get(c["thread_id"])
+        if start_id is not None:
+            s = r.call(start_id)
+            spawner = s["parent_id"] and r.call(s["parent_id"])
+            node["started_by"] = {"id": start_id, "caller_id": spawner and spawner["id"],
+                                  "caller": spawner and spawner["qualname"], "inferred": True}
     return node
 
 

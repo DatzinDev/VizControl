@@ -138,6 +138,7 @@ export interface ExceptionRow {
 export interface CallDetail extends CallNode {
   file_id: number | null;
   caller: { id: number; qualname: string; file: string | null; line: number | null } | null;
+  started_by: { id: number; caller_id: number | null; caller: string | null; inferred: true } | null;  // a thread's root
   exception?: ExceptionRow;
 }
 

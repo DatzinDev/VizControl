@@ -170,6 +170,23 @@ def _main_path(roots: list[str], edges: dict[tuple[str, str], dict]) -> list[str
         path.append(max(nxt, key=lambda e: (e["calls_below"], e["total_ns"], -e["first_seq"]))["to"])
 
 
+# -- threads --------------------------------------------------------------------------------------------------------
+
+def thread_starts(reader: Reader) -> dict[int, int]:
+    """thread_id -> the `Thread.start` call that started it. Inferred: a new thread's first call is matched to the
+    earliest unmatched `Thread.start` that began before it, in another thread. `start()` waits for the thread to
+    run, so time order lines them up; a thread started from untraced code may take a later start's match."""
+    firsts = reader.thread_firsts()
+    starts = reader.thread_start_calls()
+    out: dict[int, int] = {}
+    for t in firsts[1:]:  # the first thread is the one the run began in
+        for s in starts:
+            if s["start_ns"] < t["start_ns"] and s["thread_id"] != t["thread_id"] and s["id"] not in out.values():
+                out[t["thread_id"]] = s["id"]
+                break
+    return out
+
+
 # -- one stage opened (Level 2) -----------------------------------------------------------------------------------
 
 def _class_of(qualname: str) -> str | None:

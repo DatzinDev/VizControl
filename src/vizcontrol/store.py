@@ -260,6 +260,17 @@ class Reader:
             "code.observed, code.kind, call.code_id FROM call JOIN code ON code.id = call.code_id "
             "ORDER BY call.seq_start").fetchall()
 
+    def thread_firsts(self) -> list[dict]:
+        """Each thread's first call, in time order."""
+        return self._all("SELECT thread_id, id AS call_id, MIN(start_ns) AS start_ns FROM call GROUP BY thread_id "
+                         "ORDER BY start_ns")
+
+    def thread_start_calls(self) -> list[dict]:
+        """Opaque `threading.Thread.start` calls, in time order."""
+        return self._all("SELECT call.id, call.parent_id, call.thread_id, call.start_ns FROM call "
+                         "JOIN code ON code.id = call.code_id WHERE code.module = 'threading' "
+                         "AND code.qualname = 'Thread.start' ORDER BY call.start_ns")
+
     def codes(self) -> list[dict]:
         return self._all("SELECT code.*, file.relpath, file.path FROM code LEFT JOIN file ON file.id = code.file_id")
 

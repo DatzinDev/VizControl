@@ -132,8 +132,10 @@ Capture never silently drops data without a `gap` row.
 ### Threads (FR-CAP-11)
 
 Callbacks fire on every thread, and each thread has its own stack. Calls carry `thread_id`. A thread's first
-included call is a root (`parent_id = NULL`). Linking it to the call that ran `Thread.start()` (inferred) is not
-implemented yet. `threads = false` traces the main thread only.
+included call is a root (`parent_id = NULL`). `analysis.thread_starts` links it to the `Thread.start` call that
+launched it (an opaque node in the spawning thread), inferred by time order: each new thread's first call takes the
+earliest unmatched `Thread.start` that began before it. The call inspector shows it as "thread started by …", marked
+inferred. `threads = false` traces the main thread only.
 
 ### Writes and flushing (NFR-PERF-2)
 
