@@ -1,6 +1,6 @@
 # Analysis
 
-`src/vizcontrol/analysis/` (`tree.py`, `stages.py`, `dataflow.py`, `diff.py`)
+`src/vizcontrol/analysis.py` (one module until it outgrows it)
 
 ## Responsibility
 
@@ -15,8 +15,9 @@ FR-ANA-1..8, supports FR-VIZ-1..13.
 ## Interface
 
 ```python
-def subtree(reader, call_id: int | None, depth: int = 2, limit: int = 200) -> TreeSlice     # FR-ANA-1/3
-def stages(reader, rules: StageRules) -> StageGraph                                       # FR-ANA-2
+def subtree(reader, call_id: int | None, depth=1, limit=200, stage_of=None) -> list[dict]   # FR-ANA-1/3
+def group_members(reader, call_id, code_id, offset=0, limit=200) -> list[dict]           # expand a "×N" group
+def stages(reader) -> StageGraph   # rules come from the run's recorded config             # FR-ANA-2
 def error_path(reader) -> ErrorPath | None                                                # FR-ANA-5
 def object_flow(reader, object_id: int) -> ObjectFlow                                     # FR-ANA-4/6
 def value_diff(a: dict, b: dict) -> list[Change]                                          # FR-ANA-6
@@ -24,8 +25,8 @@ def compare(reader_a, reader_b) -> RunDiff                                      
 def search(reader, query: str) -> list[Hit]                                               # FR-ANA-8
 ```
 
-The server caches results per `(file, mtime, function, args)` with `functools.lru_cache`. Nothing is written back
-into `.vizc` files in v1.
+Results are plain JSON-able dicts. The server caches the expensive ones (`stages`, `error_path`) per run and
+drops them when the file's mtime changes. Nothing is written back into `.vizc` files in v1.
 
 ## Algorithms
 
@@ -34,9 +35,11 @@ into `.vizc` files in v1.
 - The tree comes straight from `call.parent_id`. `subtree()` returns `depth` levels below `call_id`, paging
   children with `limit`.
 - **Aggregation**: siblings with the same `code_id` under one parent fold into a group node
-  `{code, count, outcomes: {ok, raised}, total_ns, first_call_id}` when `count > 1`. Expanding a group pages its
-  members. This turns a 10,000-iteration loop into one node.
-- Each node carries `descendants` (subtree size, computed lazily) so the viewer can show "+N" without loading.
+  `{code_id, count, outcomes: {ok, raised, unfinished}, total_ns, first_call_id}` when `count > 1`. It is computed
+  with one `GROUP BY` over the parent's children, ordered by first occurrence. Expanding a group pages its members
+  (`group_members`). This turns a 10,000-iteration loop into one node. More than `limit` groups end with a
+  `{"type": "more", "remaining": N}` node.
+- Each node carries `children` (direct child count, from the trace) so the viewer can show "+N" without loading.
 
 ### Stages, Level 1 (FR-ANA-2)
 
@@ -48,10 +51,11 @@ A stage is a set of modules. Assignment, first match wins:
    `app.services.orders` → `app.services`). Opaque calls group under their top-level package (`sqlalchemy`,
    `requests`) and the stage is marked not observed inside.
 
-`StageGraph`: one node per stage (call count, total and self time, outcome summary, first `seq`) and one edge per
-caller-stage → callee-stage pair (count, first `seq`). The **main path** is the stage sequence met by a pre-order
-walk of the tree, with consecutive repeats collapsed and kept in first-`seq` order. That is the
-`Request → Controller → Service → ... → Response` line of Level 1.
+`StageGraph`: one node per stage (call count, total time of the calls entering it, self time, raised/unfinished
+counts, first `seq`, modules, observed) and one edge per caller-stage → callee-stage pair (calls, time, first
+`seq`). The **main path** starts at the stage of the first root call and keeps following the heaviest outgoing
+edge (by time) to a stage not yet on the path. That is the `Request → Controller → Service → ... → Response`
+line of Level 1.
 
 ### Error path (FR-ANA-5)
 
@@ -62,15 +66,16 @@ For the exception that ended the run (or, for `assertion_failed`, the assertion)
 - **Propagation**: calls with `outcome = raised` and the same `exception_id`, in unwind order. It ends at the
   handler or escapes the run.
 - **Chain**: `cause_id` links for `raise ... from ...` / implicit context.
-- **Recent changes**: the last *k* binding changes (per name and object) before the raise, inside the origin call
-  and its parent. This answers "what changed just before it broke".
+- **Recent changes**: for each object among the locals at the raise, the last changes found by `object_flow`.
+  For example, `rule.pct 20 → 120` between `Rule.__init__` and `load_vip_rules`. This answers "what changed just
+  before it broke".
 
 Exceptions that were raised and handled are listed separately. The viewer can show them, but they are not the
 failure.
 
 ### Data flow (FR-ANA-4/6)
 
-Built on `value.object_id`:
+Built on `value.object_id` (top-level bindings only in v1; an object nested inside another value is not found):
 
 - **Appearances**: every binding whose value (or a nested node) carries the oid, in `seq` order, with the call and
   role (`arg`, `return`, `local`, `attr-of`).

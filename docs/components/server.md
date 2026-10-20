@@ -21,7 +21,10 @@ NFR-PERF-3, NFR-SAFE-3, NFR-DEC-1, NFR-PKG-2. Exposes FR-ANA-* to the viewer.
 - The **run registry** is built at start. Given a file, it holds that file. Given a directory, it holds every
   `*.vizc` under it, rescanned on `GET /api/runs`. Run ids are paths relative to the served root. Requests for
   anything outside the registry get 404, which also prevents path traversal.
-- One `Reader` per run, opened lazily and kept in a small LRU.
+- One `Reader` per run, opened lazily, reopened (and its analysis cache dropped) when the file's mtime changes.
+  A single lock serializes API requests, which is enough for one local user.
+- Run ids in URLs are percent-encoded (`nested%2Fvip.vizc`).
+- Until the viewer is built into `viewer/static/`, `/` serves a plain page listing the runs and their API links.
 - Errors return JSON `{"error": code, "message": ...}` with a proper status.
 
 ## API (v1)
@@ -34,14 +37,15 @@ All responses are JSON. Lists are paged with `offset`/`limit`. Fields derived by
 | `GET /api/runs` | Run summaries: id, target, kind, outcome, started, duration, calls, truncated. | `Reader.run` |
 | `GET /api/runs/{run}` | Full run metadata and config. | `Reader.run` |
 | `GET /api/runs/{run}/stages` | Stage graph + main path (Level 1). | `analysis.stages` |
-| `GET /api/runs/{run}/tree?node=&depth=&offset=&limit=` | Tree slice with aggregated groups (Levels 2–3). Root when `node` is omitted. | `analysis.subtree` |
+| `GET /api/runs/{run}/tree?node=&depth=&limit=` | Tree slice with aggregated groups (Levels 2–3). Roots when `node` is omitted. `depth` ≤ 4. | `analysis.subtree` |
+| `GET /api/runs/{run}/tree?node=&code=&offset=&limit=` | Members of one `×N` group, paged. | `analysis.group_members` |
 | `GET /api/runs/{run}/calls/{id}` | Call detail: code, file, line, caller, timing, outcome, exception, child count. | `Reader.call` |
 | `GET /api/runs/{run}/calls/{id}/bindings` | Args, return, snapshots (value ids + previews). | `Reader.bindings` |
 | `GET /api/runs/{run}/calls/{id}/path` | Ancestors to root, for breadcrumbs and "reveal in tree". | `Reader` |
 | `GET /api/runs/{run}/values/{id}` | Full value tree (Level 4). | `Reader.value` |
 | `GET /api/runs/{run}/objects/{oid}` | Object appearances, flow links, changes. | `analysis.object_flow` |
 | `GET /api/runs/{run}/error` | Error path, or `null`. | `analysis.error_path` |
-| `GET /api/runs/{run}/source/{file_id}` | Source text (or 404 if not stored) + hash. | `Reader.source` |
+| `GET /api/runs/{run}/source/{file_id}` | `{path, relpath, sha256, source}`; `source` is null if not stored. | `Reader.file` |
 | `GET /api/runs/{run}/search?q=` | Hits linking to call ids. | `analysis.search` |
 | `GET /api/compare?a={run}&b={run}` | Divergence point + differing subtrees (Later). | `analysis.compare` |
 

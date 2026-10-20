@@ -54,11 +54,7 @@ src/vizcontrol/
   store.py                      schema DDL, Writer, Reader
   runners.py                    run_script, run_module, trace() context manager, traced decorator
   pytest_plugin.py              pytest11 entry point (opt-in with --vizcontrol)
-  analysis/
-    tree.py                     call tree, aggregation, error path
-    stages.py                   Level-1 grouping
-    dataflow.py                 object-id links, value diffs
-    diff.py                     run comparison
+  analysis.py                   call tree, aggregation, stages, error path, data flow, value diffs, search
   server.py                     http.server-based API + static files
   cli.py                        argparse entry point `vizcontrol`
   viewer/static/                built SPA (generated, not edited by hand)
