@@ -89,17 +89,30 @@ export interface StageNodeData extends Record<string, unknown> {
   stage: StageNode;
   main: boolean;
   selected: boolean;
+  stopped?: boolean;  // the failure started in this stage
+  ghost?: string;  // not reached by this run, seen in that run
 }
 
 export function StageNodeView({ data }: NodeProps) {
-  const { stage, main, selected } = data as StageNodeData;
+  const { stage, main, selected, stopped, ghost } = data as StageNodeData;
   const raised = stage.raised > 0;
+  if (ghost) {
+    return (
+      <div className={`stage ghost ${selected ? "selected" : ""}`} title={`Not reached by this run. ${ghost} went through it.`}>
+        {handles}
+        <div className="name">{stage.name}</div>
+        <div className="muted" style={{ fontSize: 11 }}>not reached</div>
+        <div className="muted" style={{ fontSize: 11 }}>┄ seen in {ghost}</div>
+      </div>
+    );
+  }
   return (
     <div
-      className={["stage", main && "main", !stage.observed && "opaque", raised && "raised", selected && "selected", !main && "dim"].filter(Boolean).join(" ")}
+      className={["stage", main && "main", !stage.observed && "opaque", raised && "raised", selected && "selected", !main && "dim", stopped && "stopped"].filter(Boolean).join(" ")}
       title={stage.modules.join("\n")}
     >
       {handles}
+      {stopped && <div className="stopped-badge">⚠ stopped here</div>}
       <div className={`strip ${!stage.observed ? "opaque" : raised ? "raised" : ""}`} />
       <div className="name">{stage.name}</div>
       <div className="muted" style={{ fontSize: 11 }}>

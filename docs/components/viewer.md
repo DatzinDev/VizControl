@@ -17,7 +17,7 @@ lays out, renders and navigates. Visual concept: [UI design](../ui-design.md).
 | Level 2: the stage as module › class › function boxes (elk compound layout, top to bottom), neighbouring stages collapsed around it; a function opens its first call, a collapsed stage opens that stage | |
 | Level 3 call tree: lazy expansion, `×N` groups with paged members, opaque/unfinished/raised states | Diff: synced selection between the two sides |
 | Diff (S7): pick run B (same target first), common path paired with `=`, the split in a dashed block, inspector with summary, first divergence, argument diff and the branch source; a card opens its call in its run | |
-| Failure mode: opens on the origin, red error path, off-path dimming, exception/locals/last-changes/traceback/source | Filters on the stage graph and Level 2 (they apply to the call tree) |
+| Failure mode: opens on the origin, red error path, off-path dimming, exception/locals/last-changes/traceback/source. In context: "stopped here" on the stage (Level 1) and function (Level 2), the stages a reference run reached in grey, a "Stopped here" card and a compare link | Filters on the stage graph and Level 2 (they apply to the call tree) |
 | Filters: stage checkboxes, minimum duration, library leaves. Filtered calls and what is expanded under them fold into one "hidden (N)" stub per parent; the selection and the error path always show | |
 | Level 4 value tree, object history and field-level changes | Provenance marks beyond groups, stages, flow and changes |
 | Source: excerpt in the inspector, and "View file" opens the whole file with the call or raise line in view (Esc closes it) | |
@@ -77,6 +77,13 @@ click goes up one level.
 - **Failure mode** (FR-VIZ-8): when `run.outcome` is `raised` or `assertion_failed`, the viewer opens at Level 3 on
   the origin call. The error path is highlighted from root to origin, propagation is shown with red edges, and the
   inspector opens the exception panel (type, message, traceback with observed frames linked, recent changes).
+  The failure is also shown in the whole graph. A **reference run** is picked: the latest ok run of the same
+  target, else the ok run whose route on the map shares the most stages (another test, another request). Level 1
+  marks the stage where it stopped and draws, in grey and dashed, the stages the reference reached and this run
+  didn't ("not reached · seen in …": evidence from that run, never guessed); double-click opens one in the
+  reference. Level 2 marks the function where it stopped. The run inspector's "Stopped here" card has the line,
+  the locals at the raise and their last changes, and the failure banner and the card link to the Diff with the
+  reference.
 - **Data Flow** (FR-VIZ-10, Should): follow one object. Without one, the canvas lists the run's most seen objects
   to pick from. Any oid chip in the value tree, or "Follow in Data Flow" in the value inspector, opens it too. The
   canvas shows each appearance as a step, left → right in `seq` order, one lane per module. A step shows its role,

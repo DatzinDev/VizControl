@@ -45,7 +45,13 @@ export function KV({ rows }: { rows: [string, React.ReactNode][] }) {
 
 // -- run and stage ------------------------------------------------------------------------------------------------
 
-export function RunInspector({ run, error, onOpenCall }: { run: RunSummary; error: ErrorPath | null | undefined; onOpenCall: (id: number) => void }) {
+export function RunInspector({ run, error, onOpenCall, reference }: {
+  run: RunSummary;
+  error: ErrorPath | null | undefined;
+  onOpenCall: (id: number) => void;
+  /** a run that got further, to compare with (failed runs only) */
+  reference?: { label: string; notReached: number; onCompare: () => void } | null;
+}) {
   return (
     <>
       <div className="title-lg">{runLabel(run)}</div>
@@ -70,9 +76,24 @@ export function RunInspector({ run, error, onOpenCall }: { run: RunSummary; erro
         </Section>
       )}
       {error && (
-        <Section title="Failure" className="box warn">
+        <Section title="Stopped here" className="box warn">
           <div className="mono raised">{error.exception.type}: {error.exception.message}</div>
-          <button className="link" onClick={() => onOpenCall(error.origin.id)}>{error.origin.qualname} · line {error.exception.raised_line}</button>
+          <button className="link" onClick={() => onOpenCall(error.origin.id)}>
+            {error.origin.qualname} · line {error.exception.raised_line}{error.origin.stage ? ` · stage ${error.origin.stage}` : ""}
+          </button>
+          {error.locals.length > 0 && (
+            <KV rows={error.locals.slice(0, 6).map((b) => [b.name ?? b.kind, <span className="mono">{b.preview}</span>] as [string, React.ReactNode])} />
+          )}
+          {error.recent_changes.length > 0 && <ChangeList changes={error.recent_changes.slice(-3)} onOpenCall={onOpenCall} />}
+        </Section>
+      )}
+      {error && reference && (
+        <Section title="Compared with a run that got further">
+          <div className="muted" style={{ fontSize: 12 }}>
+            {reference.notReached ? `${reference.notReached === 1 ? "1 stage in grey was" : `${reference.notReached} stages in grey were`} reached by ` : "Nothing more was reached by "}
+            <span className="mono">{reference.label}</span>.
+          </div>
+          <button className="link" onClick={reference.onCompare}>Compare with {reference.label} →</button>
         </Section>
       )}
       <div className="box dashed muted" style={{ fontSize: 12 }}>
