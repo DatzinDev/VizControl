@@ -112,7 +112,8 @@ def stages(reader: Reader) -> dict:
         n = nodes.get(stage)
         if n is None:
             n = nodes[stage] = {"name": stage, "calls": 0, "total_ns": 0, "self_ns": 0, "raised": 0,
-                                "unfinished": 0, "first_seq": seq, "observed": bool(observed), "modules": set()}
+                                "unfinished": 0, "first_seq": seq, "first_call": cid, "observed": bool(observed),
+                                "modules": set()}
         n["calls"] += 1
         n["raised"] += outcome == "raised"
         n["unfinished"] += outcome == "unfinished"

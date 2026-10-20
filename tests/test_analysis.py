@@ -15,6 +15,7 @@ def test_stages_and_main_path(runs):
     assert g["inferred"] and g["main_path"][:3] == ["__main__", "app.api", "app.services"]
     nodes = {n["name"]: n for n in g["nodes"]}
     assert nodes["json"]["observed"] is False  # library stage, grouped under its top package
+    assert runs["basic"].call(nodes["app.repo"]["first_call"])["module"] == "app.repo"
     assert nodes["app.services"]["self_ns"] <= nodes["app.services"]["total_ns"]
     edges = {(e["from"], e["to"]): e["calls"] for e in g["edges"]}
     assert edges[("app.services", "app.repo")] >= 1 and ("app.repo", "json") in edges
