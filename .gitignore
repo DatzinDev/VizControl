@@ -7,3 +7,13 @@ build/
 .vizcontrol/
 node_modules/
 src/vizcontrol/viewer/static/
+# traces contain program data; secrets must never be committed
+*.vizc
+*.vizc-wal
+*.vizc-shm
+.env
+.env.*
+*.pem
+*.key
+.pypirc
+requirements-audit.txt
