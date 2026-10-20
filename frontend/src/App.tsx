@@ -343,6 +343,7 @@ export function App() {
           {!problem && view === "stages" && stages && (
             <>
               <div className="hint">Main path in accent · double-click a stage to open it</div>
+              <CopyMermaid runId={runId!} />
               <StageView
                 graph={stages}
                 selected={selection?.kind === "stage" ? selection.name : null}
@@ -376,6 +377,7 @@ export function App() {
             detail ? (
               <>
                 <div className="hint">Stage {detail.stage} opened · modules › classes › functions · click a function to open its first call</div>
+                <CopyMermaid runId={runId!} stage={detail.stage} />
                 <ComponentView detail={detail} onOpenStage={showStage} onOpenCall={openCall} />
               </>
             ) : <div className="empty">Loading…</div>
@@ -425,5 +427,20 @@ export function App() {
 
       {searching && runId && <SearchPalette run={runId} onPick={openCall} onClose={() => setSearching(false)} />}
     </div>
+  );
+}
+
+/** The diagram on screen as Mermaid text (`vizcontrol diagram`), for a README, docs or a pull request. */
+function CopyMermaid({ runId, stage }: { runId: string; stage?: string }) {
+  const [state, setState] = useState<"" | "copied" | "failed">("");
+  const copy = () =>
+    api.mermaid(runId, stage)
+      .then((text) => navigator.clipboard.writeText(text))
+      .then(() => setState("copied"), () => setState("failed"))
+      .finally(() => setTimeout(() => setState(""), 1500));
+  return (
+    <button className="chip outline copy-mermaid" onClick={copy} title="Copy this diagram as a Mermaid flowchart">
+      {state === "copied" ? "✓ Copied" : state === "failed" ? "Copy failed" : "Copy as Mermaid"}
+    </button>
   );
 }

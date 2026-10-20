@@ -13,7 +13,7 @@ lays out, renders and navigates. Visual concept: [UI design](../ui-design.md).
 | Done | Pending |
 |---|---|
 | Shell (top bar, breadcrumbs, runs/stages/filters panel, inspector), dark and light themes from the Penpot tokens | Timeline strip |
-| Level 1 stage graph with main path. Double-click (or the stage list) opens the stage at Level 2 | Moving between levels without animated zoom |
+| Level 1 stage graph with main path. Double-click (or the stage list) opens the stage at Level 2. "Copy as Mermaid" on Level 1 and 2 | Moving between levels without animated zoom |
 | Level 2: the stage as module › class › function boxes (elk compound layout, top to bottom), neighbouring stages collapsed around it; a function opens its first call, a collapsed stage opens that stage | |
 | Level 3 call tree: lazy expansion, `×N` groups with paged members, opaque/unfinished/raised states | Diff: synced selection between the two sides |
 | Diff (S7): pick run B (same target first), common path paired with `=`, the split in a dashed block, inspector with summary, first divergence, argument diff and the branch source; a card opens its call in its run | |

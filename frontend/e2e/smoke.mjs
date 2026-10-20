@@ -43,6 +43,14 @@ await check("a passing run opens on the stage overview", async () => {
   expect((await page.$$(".stage.main")).length >= 3, "main path not highlighted");
 });
 
+await check("the overview copies as a Mermaid flowchart", async () => {
+  await browser.defaultBrowserContext().overridePermissions(new URL(base).origin, ["clipboard-read", "clipboard-sanitized-write"]);
+  await page.click(".copy-mermaid");
+  await wait(400);
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  expect(clip.startsWith("flowchart LR") && clip.includes("app.services"), `clipboard: ${clip.slice(0, 60)}`);
+});
+
 await check("double-clicking a stage opens it into modules, classes and functions (level 2)", async () => {
   const c = await nodeCenter("app.services");
   expect(c, "no app.services stage");
