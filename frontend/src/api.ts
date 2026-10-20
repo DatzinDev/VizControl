@@ -329,4 +329,63 @@ export const api = {
   map: () => get<RouteMap>("/api/map"),
   compare: (a: string, b: string) => get<RunDiff>(`/api/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`),
   search: (r: string, q: string) => get<Hit[]>(`${run(r)}/search?q=${encodeURIComponent(q)}`),
+  timeline: (r: string, at: { offset?: number; endOf?: number; seq?: number }, limit = 500) =>
+    get<TimelinePage>(`${run(r)}/timeline?limit=${limit}&${at.endOf != null ? `end_of=${at.endOf}`
+      : at.seq != null ? `seq=${at.seq}` : `offset=${at.offset ?? 0}`}`),
+  callgraph: (r: string) => get<CallGraph>(`${run(r)}/callgraph`),
+  watch: (r: string, name: string) => get<Watched[]>(`${run(r)}/watch?name=${encodeURIComponent(name)}`),
 };
+
+/** A value bound at one replay step: an argument at a call, the result at a return, the locals where it raised. */
+export interface StepValue {
+  name: string | null;
+  kind: string;
+  preview: string;
+  object_id: number | null;
+  value_id: number;
+  type: string;
+}
+
+/** One step of a replay: a call starting, returning or raising. */
+export interface Step {
+  i: number;
+  seq: number;
+  kind: "call" | "return" | "raise";
+  call_id: number;
+  parent_id: number | null;
+  depth: number;
+  code_id: number;
+  qualname: string;
+  module: string | null;
+  observed: boolean;
+  line: number | null;
+  file: string | null;
+  first_line: number | null;
+  values: StepValue[];
+  exception?: { type: string; message: string; origin: boolean; line: number | null } | null;
+}
+
+export interface TimelinePage {
+  total: number;
+  offset: number;
+  steps: Step[];
+  raises: number[];  // the steps where a call raised
+}
+
+export interface CallGraph {
+  nodes: { code_id: number; qualname: string; module: string | null; kind: string; observed: boolean; calls: number;
+    first_seq: number; raised: number }[];
+  edges: { source: number; target: number; calls: number; first_seq: number }[];
+}
+
+/** One value a watched variable had, and when. */
+export interface Watched {
+  seq: number;
+  call_id: number;
+  qualname: string;
+  kind: string;
+  preview: string;
+  object_id: number | null;
+  value_id: number;
+  type: string;
+}
