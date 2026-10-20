@@ -56,3 +56,20 @@ def test_existing_file_is_overwritten(tmp_path):
         w = Writer(tmp_path / "same.vizc", RUN)
         w.close(outcome, 0, 1, [])
     assert Reader(tmp_path / "same.vizc").run()["outcome"] == "ok"
+
+
+def test_trace_files_are_owner_only(tmp_path):
+    w = Writer(tmp_path / "new" / "t.vizc", RUN)
+    w.close("ok", 0, 1, [])
+    assert (tmp_path / "new" / "t.vizc").stat().st_mode & 0o777 == 0o600
+    assert (tmp_path / "new").stat().st_mode & 0o777 == 0o700
+
+
+def test_refuses_to_overwrite_a_file_that_is_not_a_trace(tmp_path):
+    import pytest
+
+    precious = tmp_path / "notes.db"
+    precious.write_text("important")
+    with pytest.raises(FileExistsError):
+        Writer(precious, RUN)
+    assert precious.read_text() == "important"

@@ -197,7 +197,8 @@ def test_sigterm_closes_run_as_unfinished(tmp_path):
     import signal
     import time
 
-    (tmp_path / "slow.py").write_text("import time\n\ndef wait():\n    print('ready', flush=True)\n    time.sleep(30)\n\nwait()\n")
+    (tmp_path / "slow.py").write_text(
+        "import time\n\ndef wait():\n    print('ready', flush=True)\n    time.sleep(30)\n\nwait()\n")
     out = tmp_path / "s.vizc"
     proc = subprocess.Popen([sys.executable, "-m", "vizcontrol", "run", "-o", str(out), "slow.py"],
                             cwd=tmp_path, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -208,3 +209,23 @@ def test_sigterm_closes_run_as_unfinished(tmp_path):
     r = Reader(out)
     assert r.run()["outcome"] == "unfinished"
     assert by_name(r, "wait")[0]["outcome"] == "raised"  # interrupted by the termination
+
+
+def test_secrets_in_argv_are_redacted():
+    from vizcontrol.config import Config, Redact
+    from vizcontrol.runners import scrub_argv
+    from vizcontrol.serialize import Encoder
+
+    enc = Encoder(Config(redact=Redact(values=(r"sk_live_\w+",))))
+    argv = ["app.py", "--api-key=abc", "--token", "xyz", "--name", "bob", "--password", "--verbose", "sk_live_123"]
+    assert scrub_argv(enc, argv) == ["app.py", "--api-key=‹redacted›", "--token", "‹redacted›", "--name", "bob",
+                                     "--password", "--verbose", "‹redacted›"]
+
+
+def test_cli_argv_secret_never_reaches_disk(tmp_path):
+    (tmp_path / "noop.py").write_text("pass\n")
+    out = tmp_path / "s.vizc"
+    subprocess.run([sys.executable, "-m", "vizcontrol", "run", "-o", str(out), "noop.py", "--password=hunter2"],
+                   cwd=tmp_path, capture_output=True, timeout=60, check=True)
+    assert b"hunter2" not in out.read_bytes()
+    assert Reader(out).run()["argv"] == ["noop.py", "--password=‹redacted›"]
