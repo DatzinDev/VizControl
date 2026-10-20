@@ -8,7 +8,7 @@ import { ms, outcomeIcon, runLabel, shortName } from "./format";
 import { CallInspector, ComponentInspector, ObjectInspector, RunInspector, StageInspector, ValueInspector } from "./Inspector";
 import { SearchPalette } from "./SearchPalette";
 import { StageView } from "./StageView";
-import { callKey, Key, useCallTree } from "./useCallTree";
+import { callKey, Item, Key, useCallTree } from "./useCallTree";
 
 type View = "stages" | "stage" | "calls" | "flow";
 type Selection = { kind: "stage"; name: string } | { kind: "call"; id: number } | null;
@@ -42,6 +42,8 @@ export function App() {
   const [searching, setSearching] = useState(false);
   const [focusError, setFocusError] = useState(true);
   const [hideOpaque, setHideOpaque] = useState(false);
+  const [hiddenStages, setHiddenStages] = useState<Set<string>>(new Set());
+  const [minMs, setMinMs] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
   const tree = useCallTree(runId);
   const run = runs.find((r) => r.id === runId);
@@ -190,6 +192,19 @@ export function App() {
     return null;
   }, [run]);
 
+  const hide = useCallback((item: Item): boolean => {
+    if (item.type !== "call" && item.type !== "group") return false;
+    if (hideOpaque && item.type === "call" && !item.observed && item.children === 0) return true;
+    if (item.stage && hiddenStages.has(item.stage)) return true;
+    const ns = item.type === "call" ? item.duration_ns : item.total_ns;
+    return minMs > 0 && ns != null && ns < minMs * 1e6;
+  }, [hideOpaque, hiddenStages, minMs]);
+  const toggleStage = (name: string) => setHiddenStages((h) => {
+    const next = new Set(h);
+    if (!next.delete(name)) next.add(name);
+    return next;
+  });
+
   const errorPath = useMemo(() => new Set<Key>(error ? error.path.map((c) => callKey(c.id)) : []), [error]);
   const selectedCall: CallNode | undefined =
     selection?.kind === "call" ? tree.callItem(callKey(selection.id)) ?? error?.path.find((c) => c.id === selection.id) : undefined;
@@ -259,11 +274,15 @@ export function App() {
             <>
               <div className="label" style={{ marginTop: 8 }}>Stages</div>
               {stages.nodes.map((s) => (
-                <button key={s.name} className="stage-row" onClick={() => showStage(s.name)} title="Open this stage">
-                  <span className={s.raised ? "raised" : s.observed ? "ok" : "muted"}>{s.raised ? "⚠" : s.observed ? "●" : "▒"}</span>
-                  <span style={{ flex: 1 }}>{s.name}</span>
-                  <span className="muted">{s.calls}</span>
-                </button>
+                <div key={s.name} className="stage-row">
+                  <input type="checkbox" checked={!hiddenStages.has(s.name)} onChange={() => toggleStage(s.name)}
+                    title="Show this stage's calls in the call tree" aria-label={`Show ${s.name} calls`} />
+                  <button onClick={() => showStage(s.name)} title="Open this stage">
+                    <span className={s.raised ? "raised" : s.observed ? "ok" : "muted"}>{s.raised ? "⚠" : s.observed ? "●" : "▒"}</span>
+                    <span style={{ flex: 1 }}>{s.name}</span>
+                    <span className="muted">{s.calls}</span>
+                  </button>
+                </div>
               ))}
             </>
           )}
@@ -272,6 +291,13 @@ export function App() {
             <label className="toggle"><input type="checkbox" checked={focusError} onChange={(e) => setFocusError(e.target.checked)} />Dim calls off the error path</label>
           )}
           <label className="toggle"><input type="checkbox" checked={hideOpaque} onChange={(e) => setHideOpaque(e.target.checked)} />Hide library calls without callbacks</label>
+          <label className="toggle">
+            Min duration
+            <select value={minMs} onChange={(e) => setMinMs(Number(e.target.value))}>
+              {[0, 0.01, 0.1, 1, 10, 100].map((v) => <option key={v} value={v}>{v ? `≥ ${v} ms` : "any"}</option>)}
+            </select>
+          </label>
+          <div className="muted" style={{ fontSize: 11 }}>Filtered calls fold into "hidden (N)". The selection and the error path always show.</div>
         </aside>
 
         <section className="canvas">
@@ -300,7 +326,7 @@ export function App() {
                   selected={selection?.kind === "call" ? callKey(selection.id) : null}
                   errorPath={errorPath}
                   focusError={focusError}
-                  hideOpaqueLeaves={hideOpaque}
+                  hide={hide}
                   centerOn={centerOn}
                   cut={cut}
                   onSelect={(key) => { if (key.startsWith("c")) { push(); setSelection({ kind: "call", id: Number(key.slice(1)) }); setValue(null); } else tree.toggle(key); }}

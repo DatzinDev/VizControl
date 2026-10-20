@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CallNode } from "./api";
 import { layout } from "./layout";
 import { CALL_H, CALL_W, CallNodeView, MORE_H } from "./nodes";
-import { Key, useCallTree } from "./useCallTree";
+import { Item, Key, useCallTree, Visible } from "./useCallTree";
 
 const nodeTypes = { call: CallNodeView };
 
@@ -13,29 +13,41 @@ export function CallTreeView(props: {
   selected: Key | null;
   errorPath: Set<Key>;
   focusError: boolean;
-  hideOpaqueLeaves: boolean;
+  hide: (item: Item) => boolean;
   centerOn: Key | null;
   onSelect: (key: Key) => void;
   cut: (call: CallNode) => string | null;
 }) {
-  const { tree, selected, errorPath, focusError, hideOpaqueLeaves, centerOn, onSelect, cut } = props;
+  const { tree, selected, errorPath, focusError, hide, centerOn, onSelect, cut } = props;
   const [positions, setPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
   const flow = useReactFlow();
   const fitted = useRef(false);
 
-  const shown = useMemo(
-    () =>
-      tree.visible.filter(
-        ({ item }) => !(hideOpaqueLeaves && item.type === "call" && !item.observed && item.children === 0),
-      ),
-    [tree.visible, hideOpaqueLeaves],
-  );
+  // Filtered calls (and everything expanded under them) fold into one "hidden (N)" stub per parent. The selection
+  // and the error path are never hidden.
+  const shown = useMemo(() => {
+    const out: Visible[] = [];
+    const gone = new Set<Key>();
+    const stubs = new Map<Key | null, number>();
+    for (const v of tree.visible) {
+      if (v.parent && gone.has(v.parent)) {
+        gone.add(v.key);
+      } else if (v.key !== selected && !errorPath.has(v.key) && hide(v.item)) {
+        gone.add(v.key);
+        stubs.set(v.parent, (stubs.get(v.parent) ?? 0) + 1);
+      } else {
+        out.push(v);
+      }
+    }
+    for (const [parent, count] of stubs) out.push({ key: `h${parent ?? "root"}`, parent, item: { type: "hidden", count } });
+    return out;
+  }, [tree.visible, hide, selected, errorPath]);
   const shape = shown.map((v) => v.key).join(",");
 
   useEffect(() => {
     const keys = new Set(shown.map((v) => v.key));
     layout(
-      shown.map((v) => ({ id: v.key, width: CALL_W, height: v.item.type === "more" ? MORE_H : CALL_H })),
+      shown.map((v) => ({ id: v.key, width: CALL_W, height: v.item.type === "more" || v.item.type === "hidden" ? MORE_H : CALL_H })),
       shown.filter((v) => v.parent && keys.has(v.parent)).map((v) => ({ id: `${v.parent}>${v.key}`, source: v.parent!, target: v.key })),
     ).then(setPositions);
   }, [shape]);
@@ -64,7 +76,7 @@ export function CallTreeView(props: {
       type: "call",
       position: positions.get(v.key)!,
       width: CALL_W,  // fixed size: see StageView
-      height: v.item.type === "more" ? MORE_H : CALL_H,
+      height: v.item.type === "more" || v.item.type === "hidden" ? MORE_H : CALL_H,
       data: {
         item: v.item,
         selected: v.key === selected,
@@ -79,7 +91,7 @@ export function CallTreeView(props: {
     .filter((v) => v.parent && positions.has(v.parent) && positions.has(v.key))
     .map((v) => {
       const err = errorPath.has(v.parent!) && errorPath.has(v.key);
-      const opaque = v.item.type !== "more" && !v.item.observed;
+      const opaque = v.item.type !== "more" && v.item.type !== "hidden" && !v.item.observed;
       const color = err ? "var(--raised)" : opaque ? "var(--opaque)" : "var(--muted)";
       return {
         id: `${v.parent}>${v.key}`,
@@ -99,9 +111,9 @@ export function CallTreeView(props: {
       onNodeClick={(_, n) => {
         const item = shown.find((v) => v.key === n.id)?.item;
         if (item?.type === "more") tree.loadMore(n.id);
-        else onSelect(n.id);
+        else if (item?.type !== "hidden") onSelect(n.id);
       }}
-      onNodeDoubleClick={(_, n) => tree.toggle(n.id)}
+      onNodeDoubleClick={(_, n) => !n.id.startsWith("h") && tree.toggle(n.id)}
       nodesDraggable={false}
       nodesConnectable={false}
       zoomOnDoubleClick={false}

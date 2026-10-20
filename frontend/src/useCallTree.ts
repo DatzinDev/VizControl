@@ -7,7 +7,13 @@ export const callKey = (id: number): Key => `c${id}`;
 const groupKey = (g: { parent_id: number | null; code_id: number }): Key => `g${g.parent_id ?? "r"}:${g.code_id}`;
 const PAGE = 50;
 
-export type Item = TreeItem | (MoreNode & { offset: number; group: Key });
+export type Item = TreeItem | (MoreNode & { offset: number; group: Key }) | HiddenStub;
+
+/** Siblings removed by the viewer's filters, shown as one node so the structure stays honest (FR-VIZ-6). */
+export interface HiddenStub {
+  type: "hidden";
+  count: number;
+}
 
 export interface Visible {
   key: Key;
