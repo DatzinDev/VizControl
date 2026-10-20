@@ -214,3 +214,7 @@ button.oid:hover { outline: 1px solid var(--flow); }
   display: flex; flex-direction: column; gap: 4px; }
 .callback-box .label { color: var(--flow); }
 .react-flow__edge.live .react-flow__edge-path { filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent) 70%, transparent)); }
+.reset-layout { position: absolute; top: 8px; right: 12px; z-index: 5; font-size: 12px; padding: 3px 10px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted); }
+.reset-layout:hover { color: var(--text); }
+.react-flow__node.selected .fn, .react-flow__node.selected .file-box { outline: 2px solid var(--flow); outline-offset: 2px; }

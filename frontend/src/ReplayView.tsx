@@ -1,4 +1,4 @@
-import { Background, Controls, Edge, Handle, MarkerType, Node, NodeProps, Position, ReactFlow, useReactFlow } from "@xyflow/react";
+import { applyNodeChanges, Background, Controls, Edge, Handle, MarkerType, Node, NodeChange, NodeProps, Position, ReactFlow, useReactFlow } from "@xyflow/react";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api, Binding, Callback, CallGraph, CallNode, Step, StepValue, Watched } from "./api";
 import { shortName } from "./format";
@@ -67,6 +67,24 @@ function describe(s: Step): string {
 /** The short tag of a callback in the transcript. */
 function callbackTag(cb: Callback): string {
   return cb.by ? `called back by ${cb.by}` : cb.via ? `callback · via ${cb.via}` : "callback · passed in";
+}
+
+/** Where the user moved nodes on this run's graph (per viewer, like the watches): id -> position. */
+function readMoved(runId: string): Record<string, { x: number; y: number }> {
+  try {
+    return JSON.parse(localStorage.getItem(`vizcontrol.layout.${runId}`) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveMoved(runId: string, nodes: Node[] | null) {
+  try {
+    if (nodes) localStorage.setItem(`vizcontrol.layout.${runId}`, JSON.stringify(Object.fromEntries(nodes.map((n) => [n.id, n.position]))));
+    else localStorage.removeItem(`vizcontrol.layout.${runId}`);
+  } catch {
+    // a per-viewer convenience: without storage the layout simply isn't remembered
+  }
 }
 
 function readWatches(): string[] {
@@ -230,13 +248,13 @@ export function ReplayView(props: {
   const shown = useRef<Step | undefined>(undefined);  // the last step drawn: kept while the next page loads
   if (cur) shown.current = cur;
   const now = shown.current;
-  const nodes = useMemo<Node[]>(() => {
+  const laidOut = useMemo<Node[]>(() => {
     if (!graph || !positions) return [];
     const out: Node[] = [];
     for (const [m, fns] of modules) {  // a parent before its children, as React Flow wants
       const box = positions.get(`m:${m}`) ?? { x: 0, y: 0, width: FN_W, height: FN_H };
       out.push({ id: `m:${m}`, type: "file", position: { x: box.x, y: box.y }, width: box.width, height: box.height,
-        selectable: false, data: { label: m, observed: fns.some((n) => n.observed) } });
+        data: { label: m, observed: fns.some((n) => n.observed) } });
       for (const n of fns) {
         const r = positions.get(`c${n.code_id}`) ?? { x: 0, y: 0 };
         out.push({ id: `c${n.code_id}`, type: "fn", parentId: `m:${m}`, position: { x: r.x, y: r.y }, width: FN_W, height: FN_H,
@@ -245,10 +263,28 @@ export function ReplayView(props: {
     }
     return out;
   }, [graph, positions, modules]);
+  // the nodes as shown: the layout, with what the user dragged (functions, or whole module boxes) where they left it.
+  // They change only when the user moves or selects something, so stepping keeps them stable (see StepState).
+  const [nodes, setNodes] = useState<Node[]>([]);
+  useEffect(() => {
+    const moved = readMoved(runId);
+    setNodes(laidOut.map((n) => (moved[n.id] ? { ...n, position: moved[n.id] } : n)));
+  }, [laidOut, runId]);
+  const onNodesChange = (changes: NodeChange[]) => {
+    setNodes((ns) => {
+      const next = applyNodeChanges(changes, ns);
+      if (changes.some((c) => c.type === "position" && !c.dragging)) saveMoved(runId, next);  // a drag ended
+      return next;
+    });
+  };
+  const resetLayout = () => {
+    saveMoved(runId, null);
+    setNodes(laidOut);
+  };
   const absolute = (code: number) => {  // where a function sits on the canvas: its box's position plus its own
-    const n = graph?.nodes.find((x) => x.code_id === code && x.kind !== "module" && x.kind !== "class");
-    const r = positions?.get(`c${code}`), box = n && positions?.get(`m:${n.module ?? "?"}`);
-    return r && box ? { x: box.x + r.x, y: box.y + r.y } : undefined;
+    const n = nodes.find((x) => x.id === `c${code}`);
+    const box = n && nodes.find((x) => x.id === n.parentId);
+    return n && box ? { x: box.position.x + n.position.x, y: box.position.y + n.position.y } : undefined;
   };
   const stateOf = useMemo(() => {
     const onStack = new Set(stackCodes);
@@ -299,12 +335,13 @@ export function ReplayView(props: {
         <div className="replay-graph">
           {positions && (
             <StepState.Provider value={stateOf}>
-            <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} key={runId}
-              onNodeClick={(_, n) => {
+            <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} key={runId} onNodesChange={onNodesChange}
+              onNodeDoubleClick={(_, n) => {
                 const g = graph.nodes.find((x) => `c${x.code_id}` === n.id);
                 if (g) jumpToSeq(g.first_seq);
               }}
-              nodesDraggable={false} nodesConnectable={false} zoomOnDoubleClick={false} fitView
+              multiSelectionKeyCode={["Meta", "Control"]} selectionKeyCode="Shift"
+              nodesDraggable nodesConnectable={false} zoomOnDoubleClick={false} fitView
               fitViewOptions={{ padding: 0.15, maxZoom: 1.2 }} minZoom={0.1} proOptions={{ hideAttribution: true }}>
               <Background gap={24} size={1} color="var(--border)" />
               <Controls showInteractive={false} position="bottom-right" />
@@ -312,7 +349,8 @@ export function ReplayView(props: {
             </ReactFlow>
             </StepState.Provider>
           )}
-          <div className="replay-legend">click a function to jump to its first call · ← → step · space play</div>
+          <div className="replay-legend">drag to rearrange (Ctrl/⌘-click: several · Shift-drag: a box) · double-click a function to jump to its first call · ← → step · space play</div>
+          <button className="reset-layout" onClick={resetLayout} title="Put every node back where the automatic layout had it">Reset layout</button>
         </div>
         <div className="transcript" role="log" aria-label="What happened, step by step" ref={transcript}>
           {lines.map((s) => (
