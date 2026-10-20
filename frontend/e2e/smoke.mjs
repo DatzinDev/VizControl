@@ -69,6 +69,18 @@ await check("clicking an argument opens its value (level 4)", async () => {
   expect((await page.$$(".vtree .row")).length >= 1, "no value tree");
 });
 
+await check("browser back and forward walk the levels", async () => {
+  const level = async () => (await text(".level"));
+  const steps = [];
+  for (const move of ["back", "back", "back", "forward"]) {
+    await (move === "back" ? page.goBack() : page.goForward());
+    await wait(900);
+    steps.push(await level());
+  }
+  const want = ["L3 · Function", "L2 · Components", "L1 · Overview", "L2 · Components"];
+  expect(steps.join(",") === want.join(","), `got ${steps.join(" → ")}`);
+});
+
 await check("a failed run opens on its failure with the cause", async () => {
   await page.goto(`${base}#run=vip.vizc`, { waitUntil: "networkidle0" });
   await page.reload({ waitUntil: "networkidle0" });
