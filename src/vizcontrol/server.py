@@ -193,6 +193,15 @@ def api(runs: Runs, path: str, q: dict):
         return runs.cached(run_id, A.error_path, *staging)
     if rest == "/search":
         return A.search(r, q.get("q", [""])[0])
+    if rest == "/timeline":  # a page of replay steps; `seq` asks for the page starting at that point in time
+        t = runs.cached(run_id, A.Timeline)
+        seq = _int(q, "seq", None, 0, 1 << 62)
+        offset = t.index_at(seq) if seq is not None else _int(q, "offset", 0, 0, 1 << 62)
+        return t.page(r, offset, _int(q, "limit", 500, 1, 5000))
+    if rest == "/callgraph":
+        return runs.cached(run_id, A.call_graph)
+    if rest == "/watch":
+        return A.watch(r, q.get("name", [""])[0])
     if rest == "/objects":
         return r.objects(_int(q, "limit", 50, 1, 500))
     m = re.fullmatch(r"/(calls|values|objects|source)/(\d+)(/bindings|/path)?", rest)

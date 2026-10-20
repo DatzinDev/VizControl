@@ -349,6 +349,39 @@ class Reader:
             f"JOIN code ON code.id = call.code_id WHERE binding.kind = ? AND binding.call_id IN ({marks}) "
             "ORDER BY binding.seq", (kind, *call_ids))
 
+    def call_events(self) -> list[tuple]:
+        """(id, seq_start, seq_end, outcome) of every call: what a timeline is made of."""
+        return self.db.execute("SELECT id, seq_start, seq_end, outcome FROM call").fetchall()
+
+    def bindings_of(self, call_ids: list[int]) -> list[dict]:
+        """Every binding of the given calls, with its value, in time order."""
+        if not call_ids:
+            return []
+        marks = ", ".join("?" * len(call_ids))
+        return self._all(
+            "SELECT binding.*, value.type, value.data, value.object_id FROM binding "
+            f"JOIN value ON value.id = binding.value_id WHERE binding.call_id IN ({marks}) ORDER BY binding.seq",
+            call_ids)
+
+    def named_bindings(self, name: str, limit: int) -> list[dict]:
+        """The bindings of one variable name, anywhere in the run, in time order."""
+        return self._all(
+            "SELECT binding.call_id, binding.seq, binding.kind, binding.value_id, value.object_id, value.type, "
+            "value.data, code.qualname FROM binding JOIN value ON value.id = binding.value_id "
+            "JOIN call ON call.id = binding.call_id JOIN code ON code.id = call.code_id "
+            "WHERE binding.name = ? ORDER BY binding.seq LIMIT ?", (name, limit))
+
+    def code_graph(self) -> tuple[list[dict], list[dict]]:
+        """Functions that ran (calls, first seq, raised) and who called whom (calls, first seq)."""
+        nodes = self._all(
+            "SELECT code.id AS code_id, code.qualname, code.module, code.kind, code.observed, COUNT(*) AS calls, "
+            "MIN(call.seq_start) AS first_seq, SUM(call.outcome = 'raised') AS raised "
+            "FROM call JOIN code ON code.id = call.code_id GROUP BY code.id ORDER BY first_seq")
+        edges = self._all(
+            "SELECT p.code_id AS source, c.code_id AS target, COUNT(*) AS calls, MIN(c.seq_start) AS first_seq "
+            "FROM call c JOIN call p ON p.id = c.parent_id GROUP BY 1, 2 ORDER BY first_seq")
+        return nodes, edges
+
     def bindings(self, call_id: int) -> list[dict]:
         return self._all(
             "SELECT binding.*, value.type, value.data, value.object_id FROM binding "
