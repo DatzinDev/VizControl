@@ -48,7 +48,7 @@ def test_runs_and_run(base):
 
 def test_navigation_endpoints(base):
     _, stages = api(base, "/api/runs/basic.vizc/stages")
-    assert stages["main_path"][0] == "__main__"
+    assert stages["main_path"][0] == "checkout"  # __main__, named after the script
     _, roots = api(base, "/api/runs/basic.vizc/tree")
     module = roots[0]
     _, kids = api(base, f"/api/runs/basic.vizc/tree?node={module['id']}&depth=2")

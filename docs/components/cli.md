@@ -56,7 +56,7 @@ opaque_calls = true
 threads = true
 store_source = true
 out_dir = ".vizcontrol/runs"
-stage_depth = 2
+stage_depth = 2                 # unset: 2, or 1 when that gives more than 12 stages
 
 [tool.vizcontrol.limits]
 max_calls = 1_000_000

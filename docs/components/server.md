@@ -50,7 +50,7 @@ All responses are JSON. Lists are paged with `offset`/`limit`. Fields derived by
 | `GET /api/runs/{run}/error` | Error path, or `null`. | `analysis.error_path` |
 | `GET /api/runs/{run}/source/{file_id}` | `{path, relpath, sha256, source}`; `source` is null if not stored. | `Reader.file` |
 | `GET /api/runs/{run}/search?q=` | Hits linking to call ids. | `analysis.search` |
-| `GET /api/map` | Every readable run's stages joined into one graph, each node and edge with the runs that went through it, and each run's route. Stage names are decided over all runs (`Runs.heads`). | `analysis.route_map` |
+| `GET /api/map` | Every readable run's stages joined into one graph, each node and edge with the runs that went through it, and each run's route. Stage names are decided over all runs (`Runs.staging`: the module depth and the head functions). | `analysis.route_map` |
 | `GET /api/compare?a={run}&b={run}` | Summary counts, the first divergence (parent, path, calls only in A / only in B, argument diff, branch source). Both ids go through the run registry. | `analysis.compare` |
 
 Previews: list endpoints never inline full values. Each binding returns a one-line `preview` (≤ 120 chars,

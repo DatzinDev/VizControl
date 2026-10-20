@@ -11,6 +11,7 @@ import fnmatch
 import json
 import re
 from collections import defaultdict
+from pathlib import Path
 
 from vizcontrol.serialize import preview
 from vizcontrol.store import Reader
@@ -78,16 +79,19 @@ def group_members(reader: Reader, call_id: int | None, code_id: int, offset: int
 
 # -- stages (Level 1) ---------------------------------------------------------------------------------------------
 
-def stage_namer(config: dict):
-    """Map (module, observed) to a stage name: user rules first, then the module path cut to `stage_depth`."""
+def stage_namer(config: dict, main: str | None = None, depth: int | None = None):
+    """Map (module, observed) to a stage name: user rules first, then the module path cut to the configured
+    `stage_depth`, else to `depth` (default 2). `main` names the `__main__` module (the script or `-m` module)."""
     rules = config.get("stages") or {}
-    depth = config.get("stage_depth", 2)
+    depth = config.get("stage_depth") or depth or 2
     cache: dict[tuple, str] = {}
 
     def stage_of(module: str | None, observed) -> str:
         key = (module, bool(observed))
         name = cache.get(key)
         if name is None:
+            if module == "__main__" and main:
+                module = main
             name = "?" if module is None else next(
                 (stage for stage, globs in rules.items()
                  if any(fnmatch.fnmatch(module, g) or (g.endswith(".*") and module == g[:-2]) for g in globs)),
@@ -102,13 +106,29 @@ def stage_namer(config: dict):
 
 
 MIN_STAGES = 3  # a project in fewer module stages than this is split into the functions it fans out to
+MAX_STAGES = 12  # a project in more module stages than this is staged by top-level package
 LOOP_SHARE = 0.9  # a callee with this share of its siblings' calls is a loop body: the split goes on below it
 
 
-def module_stages(reader: Reader) -> set[str]:
-    """The observed module stages of a run: what decides whether a project is split into functions."""
-    namer = stage_namer(reader.run()["config"])
+def main_module(run: dict) -> str | None:
+    """What `__main__` stands for: the script's name, or the module of `python -m`."""
+    if run["kind"] == "script":
+        return Path(run["target"]).stem
+    return run["target"] if run["kind"] == "module" else None
+
+
+def module_stages(reader: Reader, depth: int | None = None) -> set[str]:
+    """The observed module stages of a run: what decides the stage depth and whether a project is split into
+    functions."""
+    run = reader.run()
+    namer = stage_namer(run["config"], main_module(run), depth)
     return {namer(c["module"], True) for c in reader.codes() if c["observed"]}
+
+
+def auto_depth(names: set[str]) -> int:
+    """The stage depth for a project whose depth-2 module stages are `names`: 2, or 1 when that is too many to
+    read at a glance (a package of 20 modules is one stage, opened at Level 2)."""
+    return 1 if len(names) > MAX_STAGES else 2
 
 
 class Stager:
@@ -119,11 +139,16 @@ class Stager:
     with LOOP_SHARE of its siblings' calls, `process()` x 1000 next to `setup()`) to the first caller with two
     or more. A head's stage takes the calls below it in the head's own module stage; other modules keep theirs.
     `heads` decides for a set of runs at once (`vizcontrol serve` of a directory), as the (module, qualname) of
-    every head any of them found, so a function is a stage in all of them; None decides from this run alone."""
+    every head any of them found, so a function is a stage in all of them; None decides from this run alone.
+    `depth` likewise: the module path depth for a set of runs (`auto_depth`), None decides from this run alone; a
+    configured `stage_depth` wins over both."""
 
-    def __init__(self, reader: Reader, heads: frozenset[tuple[str, str]] | None = None):
-        config = reader.run()["config"]
-        self.namer = stage_namer(config)
+    def __init__(self, reader: Reader, heads: frozenset[tuple[str, str]] | None = None, depth: int | None = None):
+        run = reader.run()
+        config = run["config"]
+        if depth is None:
+            depth = auto_depth(module_stages(reader, 2))
+        self.namer = stage_namer(config, main_module(run), depth)
         codes = {c["id"]: c for c in reader.codes()}
         self.heads: dict[int, tuple[str, str]] = {}  # code_id -> (its stage, the module stage it splits)
         self.names: frozenset[tuple[str, str]] = frozenset()  # (module, qualname) of the heads found
@@ -134,7 +159,7 @@ class Stager:
                 self.heads[c["id"]] = (s, self.namer(c["module"], c["observed"]))
         if rules:
             return
-        if heads is None and len(module_stages(reader)) < MIN_STAGES:
+        if heads is None and len(module_stages(reader, depth)) < MIN_STAGES:
             self._fan_out(reader, codes)
         for c in codes.values():
             if heads and (c["module"], c["qualname"]) in heads:
@@ -210,10 +235,10 @@ class Stager:
         return head
 
 
-def stages(reader: Reader, heads: frozenset | None = None) -> dict:
+def stages(reader: Reader, heads: frozenset | None = None, depth: int | None = None) -> dict:
     """Stage graph for the Level-1 overview (FR-ANA-2). One pass over all calls."""
     rows = reader.all_calls()
-    stage_by_call = Stager(reader, heads).assign(rows)
+    stage_by_call = Stager(reader, heads, depth).assign(rows)
     dur: dict[int, int] = {}
     child_dur: dict[int, int] = defaultdict(int)
     nodes: dict[str, dict] = {}
@@ -354,13 +379,13 @@ def _class_of(qualname: str) -> str | None:
     return ".".join(parts[:-1]) if len(parts) > 1 and "<locals>" not in parts else None
 
 
-def stage_detail(reader: Reader, stage: str, heads: frozenset | None = None) -> dict | None:
+def stage_detail(reader: Reader, stage: str, heads: frozenset | None = None, depth: int | None = None) -> dict | None:
     """Level 2 (FR-VIZ-2): one stage opened into module › class › function, one node per function (its calls
     aggregated), the calls between them, and the calls crossing the stage boundary per (caller, callee) pair.
     ponytail: every function of the stage is returned; page them if a stage ever has thousands."""
     codes = {c["id"]: c for c in reader.codes()}
     rows = reader.all_calls()
-    stage_by_call = Stager(reader, heads).assign(rows)
+    stage_by_call = Stager(reader, heads, depth).assign(rows)
     code_by_call: dict[int, int] = {}
     dur: dict[int, int] = {}
     child_dur: dict[int, int] = defaultdict(int)
@@ -552,7 +577,7 @@ def _binding_view(b: dict) -> dict:
             "type": b["type"], "preview": preview(data)}
 
 
-def error_path(reader: Reader, heads: frozenset | None = None) -> dict | None:
+def error_path(reader: Reader, heads: frozenset | None = None, depth: int | None = None) -> dict | None:
     """The exception that ended the run: where it started, how execution got there, how it propagated,
     and the latest observed changes to the objects in scope (FR-ANA-5)."""
     escaped = [e for e in reader.exceptions() if e["handled_call_id"] is None and e["raised_call_id"] is not None]
@@ -561,7 +586,7 @@ def error_path(reader: Reader, heads: frozenset | None = None) -> dict | None:
     exc = escaped[-1]
     path = reader.ancestors(exc["raised_call_id"])
     origin = path[-1]
-    stages_on_path = Stager(reader, heads).path(path)
+    stages_on_path = Stager(reader, heads, depth).path(path)
     locals_at_raise = [b for b in reader.bindings(origin["id"]) if b["kind"] == "raise"]
     recent = []
     for b in locals_at_raise:
