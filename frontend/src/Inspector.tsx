@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, Binding, CallDetail, Change, Enc, ErrorPath, ObjectFlow, ObjectSummary, RunSummary, Source, StageDetail, StageNode, Value } from "./api";
 import { fnLabel } from "./ComponentView";
 import { changeText, ms, outcomeIcon, runLabel, shortName } from "./format";
@@ -146,6 +146,40 @@ function BindingRow({ b, onOpen }: { b: Binding; onOpen: (b: Binding) => void })
   );
 }
 
+/** The whole file, read-only, the line in view (FR-VIZ-9). Esc or a click outside closes it. */
+function SourcePanel({ source, highlight, raised, onClose }: { source: Source; highlight: number | null; raised: boolean; onClose: () => void }) {
+  const mark = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    mark.current?.scrollIntoView({ block: "center" });  // braces: newer browsers return a promise, not a cleanup
+  }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+  return (
+    <div className="palette-bg" onClick={onClose}>
+      <div className="palette source-panel" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Source">
+        <div className="head"><span className="mono">{source.relpath ?? source.path}</span><button className="back" onClick={onClose}>close ✕</button></div>
+        <pre className="source">
+          {source.source!.split("\n").map((text, i) => (
+            <span key={i} ref={i + 1 === highlight ? mark : undefined} className={i + 1 === highlight ? `hl ${raised ? "raised" : ""}` : undefined}>
+              <span className="ln">{i + 1}</span>
+              {text}
+              {"\n"}
+            </span>
+          ))}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
 function SourceExcerpt({ source, first, highlight, raised }: { source: Source; first: number; highlight: number | null; raised: boolean }) {
   if (!source.source) return <div className="muted">Source not stored for {source.relpath ?? source.path}</div>;
   const lines = source.source.split("\n");
@@ -180,6 +214,7 @@ export function CallInspector(props: {
   const call = useLoad<CallDetail>(() => api.call(run, id), [run, id]);
   const bindings = useLoad<Binding[]>(() => api.bindings(run, id), [run, id]) ?? [];
   const source = useLoad<Source | undefined>(async () => (call?.file_id ? api.source(run, call.file_id) : undefined), [run, call?.file_id]);
+  const [fullSource, setFullSource] = useState(false);
   if (!call) return <div className="muted">Loading…</div>;
   const isOrigin = error?.origin.id === id;
   const by = (kind: string) => bindings.filter((b) => b.kind === kind);
@@ -247,7 +282,11 @@ export function CallInspector(props: {
       {source && (
         <Section title={`Source · ${source.relpath ?? source.path}`} className="box">
           <SourceExcerpt source={source} first={call.first_line ?? 1} highlight={highlight} raised={isOrigin} />
+          {source.source && <button className="link" onClick={() => setFullSource(true)}>View file →</button>}
         </Section>
+      )}
+      {fullSource && source?.source && (
+        <SourcePanel source={source} highlight={highlight} raised={isOrigin} onClose={() => setFullSource(false)} />
       )}
     </>
   );
