@@ -105,6 +105,28 @@ def test_object_flow_hops_to_the_objects_the_data_became(tmp_path):
     assert [(b["qualname"], b["object_id"], b["preview"]) for b in flow["became"]] == [("load", None, "3")]
 
 
+def ping(n):
+    return pong(n - 1) if n else 0
+
+
+def pong(n):
+    return ping(n - 1) if n else 0
+
+
+def bounce():
+    return ping(20) + pong(0)
+
+
+def test_a_stage_reentered_below_itself_counts_its_time_once(tmp_path):
+    with vizcontrol.trace(output=tmp_path / "rec.vizc") as t:
+        bounce()
+    g = A.stages(Reader(t.path))
+    nodes = {n["name"]: n for n in g["nodes"]}
+    assert {"ping", "pong"} <= set(nodes)
+    run = g["nodes"][0]["total_ns"]  # bounce(), the root
+    assert nodes["ping"]["total_ns"] <= run and nodes["pong"]["total_ns"] <= nodes["ping"]["total_ns"]
+
+
 def scale(rows, k):
     return [{"n": r["n"] * k} for r in rows]
 
