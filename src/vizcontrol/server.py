@@ -86,6 +86,7 @@ def _summary(runs: Runs, run_id: str) -> dict:
             "exit_code": run["exit_code"], "started": run["started_wall"],
             "duration_ns": run["ended_ns"] - run["started_ns"] if run["ended_ns"] else None,
             "calls": r.counts()["call"], "truncated": run["truncated"], "level": run["config"].get("level"),
+            "process_gone": run["process_gone"],
             # what the viewer needs to mark cut nodes: calls at max_depth lost their children if limit_depth was hit,
             # and the call where max_calls stopped tracing
             "max_depth": run["config"].get("limits", {}).get("max_depth"),

@@ -53,7 +53,9 @@ class Reader:
   (FR-PER-3) and always with the `sha256`.
 - Crash tolerance (FR-PER-4): the runner registers `atexit` and `SIGTERM`/`SIGINT` handlers that flush and close
   with outcome `unfinished`. On `SIGKILL` the last committed batch survives thanks to WAL. Such a file keeps
-  `outcome = running`. Telling it apart from a live run (writer lock check) is not implemented yet.
+  `outcome = running`. The writer records its `pid` and `host` in `meta`, so `Reader.run()` reports such a run as
+  `unfinished` with `process_gone = true` (inferred) when, on the same host and on POSIX, that process no longer
+  exists. A reused pid reads as alive, the safe side. On another host or on Windows it stays `running`.
 
 ### Reader
 
