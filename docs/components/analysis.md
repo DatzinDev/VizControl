@@ -55,7 +55,9 @@ A stage is a set of modules, or the calls below a head function. `Stager` assign
 3. Flat projects: with no function rules and fewer than 3 observed module stages, a one-file script would be one
    stage. Then each module stage is split: from the codes entering it (root calls, or calls from another stage),
    a chain of lone callees (`main()` → `run()`) stays the stage, and the functions the chain first fans out to
-   (two or more) become head functions, one stage each, named by qualname (`extract`, `transform`, `load`).
+   (two or more) become head functions, one stage each, named by qualname (`extract`, `transform`, `load`). A
+   loop body counts as lone: a callee with 90% of its siblings' calls (`handle()` ×1000 next to `setup()`) leads
+   on, and its few siblings stay in the stage.
 
 A head's stage takes every call below it that is in the head's own module stage, even through library calls
 (callbacks); calls in other modules keep their module stage. Heads are code objects, found from the distinct

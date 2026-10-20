@@ -102,6 +102,7 @@ def stage_namer(config: dict):
 
 
 MIN_STAGES = 3  # a project in fewer module stages than this is split into the functions it fans out to
+LOOP_SHARE = 0.9  # a callee with this share of its siblings' calls is a loop body: the split goes on below it
 
 
 def module_stages(reader: Reader) -> set[str]:
@@ -114,8 +115,9 @@ class Stager:
     """Which stage each call belongs to (inferred). By module path (`stage_namer`), except below a head function:
     a code matched by a `module:function` rule, or, when the project is split (fewer than MIN_STAGES module stages),
     one of the functions a module stage fans out to. Fanning out starts at the codes entering the stage (root
-    calls, or calls from another stage) and goes past lone callees (`main()` -> `run()`) to the first caller with
-    two or more. A head's stage takes the calls below it in the head's own module stage; other modules keep theirs.
+    calls, or calls from another stage) and goes past lone callees (`main()` -> `run()`) and loop bodies (a callee
+    with LOOP_SHARE of its siblings' calls, `process()` x 1000 next to `setup()`) to the first caller with two
+    or more. A head's stage takes the calls below it in the head's own module stage; other modules keep theirs.
     `heads` decides for a set of runs at once (`vizcontrol serve` of a directory), as the (module, qualname) of
     every head any of them found, so a function is a stage in all of them; None decides from this run alone."""
 
@@ -141,6 +143,7 @@ class Stager:
 
     def _fan_out(self, reader: Reader, codes: dict[int, dict]) -> None:
         base = {k: self.namer(c["module"], c["observed"]) for k, c in codes.items()}
+        counts = reader.code_counts()
         callees: dict[object, set[int]] = defaultdict(set)  # (None, stage) stands for "outside the stage"
         for caller, k in reader.code_calls():
             if not codes[k]["observed"]:
@@ -157,7 +160,10 @@ class Stager:
                     ks = callees[caller] - seen
                     seen |= ks
                     fns = {k for k in ks if codes[k]["kind"] not in ("module", "class")}
-                    if len(fns) > 1:
+                    body = max(fns, key=lambda k: counts.get(k, 0), default=None)
+                    if len(fns) > 1 and counts.get(body, 0) >= LOOP_SHARE * sum(counts.get(k, 0) for k in fns):
+                        ks -= fns - {body}  # the loop body leads on; its few siblings stay in this stage
+                    elif len(fns) > 1:
                         self.heads.update((k, (codes[k]["qualname"], stage)) for k in fns)
                         ks -= fns
                     lone += ks  # a lone function, an import or a class body: keep looking below it

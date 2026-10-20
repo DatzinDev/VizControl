@@ -270,6 +270,10 @@ class Reader:
         return self.db.execute("SELECT DISTINCT p.code_id, call.code_id FROM call "
                                "LEFT JOIN call p ON p.id = call.parent_id").fetchall()
 
+    def code_counts(self) -> dict[int, int]:
+        """code_id -> how many calls ran it."""
+        return dict(self.db.execute("SELECT code_id, COUNT(*) FROM call GROUP BY code_id").fetchall())
+
     def roots(self) -> list[dict]:
         """Root calls, in time order. A thread id is not a thread: Python reuses idents once a thread ends."""
         return self._all("SELECT id, thread_id, start_ns FROM call WHERE parent_id IS NULL ORDER BY start_ns")

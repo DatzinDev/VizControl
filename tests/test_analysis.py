@@ -124,6 +124,35 @@ def test_compare_lists_the_calls_that_returned_something_else(tmp_path):
                                                             "after": "3"}
 
 
+class Acc:
+    def __init__(self):
+        self.total = 0
+
+    def add(self, v):
+        self.total += v
+
+
+def handle(acc, i):
+    r = {"n": i % 3}
+    if r["n"]:
+        acc.add(r["n"])
+    return clean([r])
+
+
+def looped():
+    acc = Acc()
+    for i in range(30):
+        handle(acc, i)
+    return load([acc])
+
+
+def test_a_loop_body_is_split_below_it(tmp_path):
+    with vizcontrol.trace(output=tmp_path / "loop.vizc") as t:
+        looped()
+    names = [n["name"] for n in A.stages(Reader(t.path))["nodes"]]
+    assert sorted(names[1:]) == ["Acc.add", "clean"]  # not Acc.__init__ / handle: handle x30 is the loop body
+
+
 def test_function_rules_make_stages(tmp_path):
     with vizcontrol.trace(output=tmp_path / "rule.vizc", stages={"Load": ["*:load"], "T": ["*:trans*"]}) as t:
         main()
