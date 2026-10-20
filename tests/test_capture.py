@@ -209,6 +209,23 @@ def test_levels(tmp_path, level):
         assert bindings(r, calls[0]["id"], "local") == {"n": {"t": "int", "v": 1}}
 
 
+def square(n):
+    return n * n
+
+
+def test_values_are_stored_once_and_hot_functions_keep_only_their_first(tmp_path):
+    with vizcontrol.trace(output=tmp_path / "hot.vizc", values={"max_per_function": 3}) as t:
+        for _ in range(10):
+            square(2)
+    r = Reader(t.path)
+    calls = by_name(r, "square")
+    assert len(calls) == 10
+    assert [bool(r.bindings(c["id"])) for c in calls] == [True] * 3 + [False] * 7
+    assert r.counts()["value"] == 2 < r.counts()["binding"] == 6  # n=2 and 4, shared by the three calls
+    assert r.run()["truncated"] == ["limit_values_per_function"]
+    assert [(g["kind"], g["detail"]) for g in r.gaps()] == [("limit_values_per_function", "square")]
+
+
 def test_sigterm_closes_run_as_unfinished(tmp_path):
     import signal
     import time

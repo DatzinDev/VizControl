@@ -72,7 +72,7 @@ CREATE TABLE call (
   children     INTEGER NOT NULL DEFAULT 0     -- direct child count, filled on close
 );
 
-CREATE TABLE value (
+CREATE TABLE value (                 -- one row per distinct encoded value: bindings may share it
   id        INTEGER PRIMARY KEY,
   object_id INTEGER,                 -- per-run identity of the live object (FR-VAL-3), NULL for immutables
   type      TEXT NOT NULL,           -- qualified type name
@@ -112,7 +112,7 @@ CREATE TABLE gap (                   -- explicit "not captured" facts (NFR-OBS)
   id      INTEGER PRIMARY KEY,
   call_id INTEGER REFERENCES call(id),
   seq     INTEGER NOT NULL,
-  kind    TEXT NOT NULL,             -- limit_calls | limit_depth | limit_values | thread_skipped | tracer_error
+  kind    TEXT NOT NULL,             -- limit_calls | limit_depth | limit_values | limit_values_per_function (detail: its qualname) | thread_skipped | tracer_error
   detail  TEXT
 );
 

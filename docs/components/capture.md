@@ -107,6 +107,15 @@ Arguments are read from `frame.f_locals` using the first `co_argcount + co_kwonl
 names of `co_varnames`. Every value goes through the `Encoder` before being queued. Locals snapshots take at most
 `values.max_items` names.
 
+Real code repeats itself, and so do its values:
+- An encoded value already stored (same object id, type and data) is not stored again: its binding points to the
+  existing row. On real projects 90% or more of the bindings repeat a value. The lookup table is dropped after
+  32 MiB of values.
+- Only the first `values.max_per_function` calls (default 1000) of each function record values. A hot function's
+  later calls keep their structure, timing and outcome, but no arguments or return; the locals where an exception
+  originates are still recorded. The first excess call of each function writes a `limit_values_per_function` gap
+  with its qualname.
+
 ### Exceptions (FR-CAP-6)
 
 `RAISE` fires in every frame an exception propagates through, so entries are keyed by `id(exc)` with a strong
