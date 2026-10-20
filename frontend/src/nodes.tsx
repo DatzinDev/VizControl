@@ -115,10 +115,10 @@ export function StageNodeView({ data }: NodeProps) {
       {stopped && <div className="stopped-badge">⚠ stopped here</div>}
       <div className={`strip ${!stage.observed ? "opaque" : raised ? "raised" : ""}`} />
       <div className="name">{stage.name}</div>
-      <div className="muted" style={{ fontSize: 11 }}>
+      <div className="muted line" title={`${calls(stage.calls)}${raised ? ` · ${stage.raised} raised` : ""}`}>
         {calls(stage.calls)}{raised ? <span className="raised"> · {stage.raised} raised</span> : null}
       </div>
-      <div className="mono muted" style={{ fontSize: 11 }}>
+      <div className="mono muted line">
         {stage.runs ? `${stage.runs.length} run${stage.runs.length === 1 ? "" : "s"} · ${ms(stage.total_ns)}` : ms(stage.total_ns)}
       </div>
     </div>
