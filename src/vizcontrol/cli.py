@@ -84,6 +84,25 @@ def _info(path: str) -> int:
     return 0
 
 
+def _diagram(path: str, stage: str | None) -> int:
+    from vizcontrol import analysis, diagram
+    from vizcontrol.store import Reader
+
+    try:
+        r = Reader(path)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"vizcontrol: {e}", file=sys.stderr)
+        return 1
+    text = diagram.stages(r) if stage is None else diagram.stage(r, stage)
+    if text is None:
+        print(f"vizcontrol: no stage {stage!r}; the stages are: "
+              + ", ".join(n["name"] for n in analysis.stages(r)["nodes"]),
+              file=sys.stderr)
+        return 1
+    print(text, end="")
+    return 0
+
+
 def _ls(directory: str) -> int:
     from vizcontrol.store import Reader
 
@@ -112,6 +131,9 @@ def main(argv: list[str] | None = None) -> int:
     info.add_argument("file")
     ls = sub.add_parser("ls", help="list runs in a directory")
     ls.add_argument("dir", nargs="?", default=load_config().out_dir)
+    dia = sub.add_parser("diagram", help="a run's stages (or one stage opened) as a Mermaid flowchart")
+    dia.add_argument("file")
+    dia.add_argument("--stage", help="open this stage into its modules, classes and functions (Level 2)")
     srv = sub.add_parser("serve", help="explore runs in the browser")
     srv.add_argument("path", nargs="?", default=load_config().out_dir, help="a .vizc file or a directory of runs")
     srv.add_argument("--port", type=int, default=7171)
@@ -120,6 +142,8 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
     if args.command == "info":
         return _info(args.file)
+    if args.command == "diagram":
+        return _diagram(args.file, args.stage)
     if args.command == "serve":
         from vizcontrol.server import serve
 

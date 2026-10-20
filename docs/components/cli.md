@@ -28,6 +28,7 @@ vizcontrol serve [PATH]     # file or directory, default .vizcontrol/runs
 
 vizcontrol ls [DIR]         # table of runs: time, target, outcome, duration, calls
 vizcontrol info FILE        # run metadata, config, truncation, counts per table
+vizcontrol diagram FILE [--stage NAME]   # Level 1 (or one stage, Level 2) as a Mermaid flowchart on stdout
 ```
 
 Everything after the script path (or `-m module`) belongs to the target program, the same as with `python`.
@@ -79,6 +80,7 @@ hook = "mypkg.viz:redact"
 API = ["app.api.*"]
 Service = ["app.services.*"]
 Persistence = ["app.repo.*", "sqlalchemy.*"]
+Load = ["etl:load_*"]           # module:function, a stage per matching function and the calls below it
 ```
 
 `Config` is one frozen dataclass. Unknown keys are an error that names the key, which catches typos early.
