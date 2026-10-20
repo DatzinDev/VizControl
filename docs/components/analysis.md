@@ -156,7 +156,11 @@ scans the value table; an oid index written at capture is the upgrade if that ge
 - Reported: the parent and its ancestors (paired, A and B), the parent's children only in A and only in B with
   their `call_line`, the parent's argument differences (`value_diff`), and the source lines around those call lines
   (usually the branch that decided).
-- Later: matched calls whose return values differ, and aggregation of repeated siblings before aligning.
+- **Different results**: the aligned pairs (prefix, suffix and equal blocks) whose return values differ, object ids
+  blanked since they differ between runs. Listed in the order they returned in A, so the first one is usually
+  where the results started to differ and the next ones carry it to the callers; each with `value_diff`. This is
+  how two runs on different inputs differ when they take the same path.
+- Later: aggregation of repeated siblings before aligning.
 
 ### Search (FR-ANA-8)
 

@@ -105,6 +105,25 @@ def test_object_flow_hops_to_the_objects_the_data_became(tmp_path):
     assert [(b["qualname"], b["object_id"], b["preview"]) for b in flow["became"]] == [("load", None, "3")]
 
 
+def scale(rows, k):
+    return [{"n": r["n"] * k} for r in rows]
+
+
+def run_k(k):
+    return load(scale(extract(), k))
+
+
+def test_compare_lists_the_calls_that_returned_something_else(tmp_path):
+    for k in (2, 3):
+        with vizcontrol.trace(output=tmp_path / f"k{k}.vizc"):
+            run_k(k)
+    d = A.compare(Reader(tmp_path / "k2.vizc"), Reader(tmp_path / "k3.vizc"))
+    assert d["divergence"] is None and d["summary"]["returns_differ"] == 1  # load returns the same count
+    [r] = d["returns"]
+    assert r["qualname"] == "scale" and r["changes"][0] == {"path": "[1]['n']", "op": "changed", "before": "2",
+                                                            "after": "3"}
+
+
 def test_function_rules_make_stages(tmp_path):
     with vizcontrol.trace(output=tmp_path / "rule.vizc", stages={"Load": ["*:load"], "T": ["*:trans*"]}) as t:
         main()
