@@ -102,6 +102,16 @@ await check("filtered calls fold into hidden (N) and the error path stays", asyn
   expect(!(await page.$$(".node.hidden")).length, "stubs remain with no filter");
 });
 
+await check("the full source opens on the raise line and Esc closes only it", async () => {
+  await page.$$eval(".inspector button.link", (bs) => bs.find((b) => b.textContent.startsWith("View file")).click());
+  await wait(500);
+  expect((await text(".source-panel .hl.raised")).includes("raise"), "raise line not highlighted");
+  await page.keyboard.press("Escape");
+  await wait(400);
+  expect(!(await page.$(".source-panel")), "panel still open");
+  expect((await text(".level")) === "L3 · Failure", `level is ${await text(".level")}`);
+});
+
 await check("search finds a function and reveals it", async () => {
   await page.keyboard.down("Control");
   await page.keyboard.press("k");
