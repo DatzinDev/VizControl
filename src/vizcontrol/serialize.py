@@ -310,6 +310,9 @@ class Encoder:
         out = {"t": "opaque", "type": type_name(type(obj))}
         if isinstance(obj, (types.FunctionType, types.BuiltinFunctionType, type)):
             out["label"] = f"{obj.__module__}.{obj.__qualname__}"
+        elif isinstance(obj, types.MethodType):  # bound: what it runs is its function (a callback on a bus, say)
+            fn = obj.__func__
+            out["label"] = f"{getattr(fn, '__module__', '?')}.{getattr(fn, '__qualname__', type_name(type(fn)))}"
         elif isinstance(obj, types.ModuleType):
             out["label"] = obj.__name__
         try:
