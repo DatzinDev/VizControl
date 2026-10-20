@@ -1,9 +1,9 @@
 # VizControl
 
-Observe what a Python program really does while it runs and explore it as an interactive, hierarchical graph.
-The graph comes from runtime evidence, not from a model's guess about the code.
+Record what a Python program really does while it runs, then step through it like a debugger after the fact.
+Everything shown comes from runtime evidence, not from a model's guess about the code.
 
-![A failed run on the overview: the stage where it stopped, the stage a passing run reached and this one didn't, and the locals where it failed](https://raw.githubusercontent.com/DatzinDev/VizControl/main/docs/img/overview.png)
+![Replay of the ETL example: the call graph by module, a callback marked with where the function came from, the transcript and the call stack](https://raw.githubusercontent.com/DatzinDev/VizControl/main/docs/img/replay.png)
 
 ```
 pip install vizcontrol
@@ -15,17 +15,13 @@ vizcontrol diagram <run>.vizc         # the run's stages as a Mermaid flowchart
 vizcontrol diff <a>.vizc <b>.vizc     # where two runs split and which results differ
 ```
 
-A run opens as a recording: the call graph lights up step by step, a transcript says who called whom with what and
-what came back, and Watch follows the variables you pick, like a debugger after the fact. Try
-`vizcontrol run --serve examples/etl.py --bad`.
+A run opens as a recording you can step through, like a debugger after the fact: the call graph (one box per module)
+lights up as the program goes, a transcript says who called whom with what and what came back, callbacks are marked
+with where the function came from, and Watch follows the variables you pick. A failed run opens on the step where
+it raised.
 
-Start with [Understanding a project you didn't write](https://github.com/DatzinDev/VizControl/blob/main/docs/guide.md),
-or the [demo](https://github.com/DatzinDev/VizControl/tree/main/examples/demo): a small project traced three ways
-(a build that works, one that fails, its tests) with a tour of what the viewer shows.
-
-The viewer goes from the whole project (a map of every run's route) down to stages, functions, calls and values;
-follows an object through the calls that touched it; and opens a failed run on its failure, with what a passing
-run reached and this one didn't.
+Try it on the [ETL example](https://github.com/DatzinDev/VizControl/tree/main/examples/etl), or read
+[Understanding a project you didn't write](https://github.com/DatzinDev/VizControl/blob/main/docs/guide.md).
 
 ```python
 import vizcontrol

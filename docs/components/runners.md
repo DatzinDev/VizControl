@@ -99,7 +99,6 @@ app.wsgi_app = vizcontrol.web.WSGIMiddleware(app.wsgi_app)    # Flask; Django's 
   exception that escapes the app makes the run `raised`; a framework's 500 page is sent outside the middleware, so
   that status is not recorded.
 - WSGI: a body the app streams after returning (a generator) is produced outside the run.
-- `examples/api.py` is a FastAPI service set up this way.
 
 ## Limits and failure modes
 
