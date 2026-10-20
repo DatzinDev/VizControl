@@ -246,14 +246,18 @@ class Reader:
             (f'%"oid":{object_id},%', f'%"oid":{object_id}}}%'))
 
     def objects(self, limit: int = 50) -> list[dict]:
-        """Objects bound at the top level, most seen first, named after their first binding that isn't `self`."""
+        """Objects bound at the top level, most seen first, named after their first binding that isn't `self`
+        (SQLite takes a bare column from the row of the group's MIN). Two scans of `binding`, whatever the size."""
         return self._all(
-            "SELECT value.object_id, value.type, COUNT(*) AS count, MIN(binding.seq) AS first_seq, "
-            "(SELECT b.name FROM binding b JOIN value v ON v.id = b.value_id WHERE v.object_id = value.object_id "
-            "AND b.name IS NOT NULL AND b.name != 'self' ORDER BY b.seq LIMIT 1) AS name "
+            "WITH top AS (SELECT value.object_id, value.type, COUNT(*) AS count, MIN(binding.seq) AS first_seq "
             "FROM binding JOIN value ON value.id = binding.value_id "
             "WHERE value.object_id IS NOT NULL AND value.data NOT LIKE '{\"t\":\"opaque\"%' "
-            "GROUP BY value.object_id ORDER BY count DESC, first_seq LIMIT ?", (limit,))
+            "GROUP BY value.object_id ORDER BY count DESC, first_seq LIMIT ?), "
+            "named AS (SELECT value.object_id, binding.name, MIN(binding.seq) FROM binding "
+            "JOIN value ON value.id = binding.value_id WHERE value.object_id IN (SELECT object_id FROM top) "
+            "AND binding.name IS NOT NULL AND binding.name != 'self' GROUP BY value.object_id) "
+            "SELECT top.*, named.name FROM top LEFT JOIN named USING (object_id) ORDER BY count DESC, first_seq",
+            (limit,))
 
     def search(self, text: str, limit: int = 100) -> dict[str, list[dict]]:
         like = f"%{text}%"
