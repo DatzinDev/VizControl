@@ -13,17 +13,19 @@ import { callKey, Key, useCallTree } from "./useCallTree";
 type View = "stages" | "stage" | "calls" | "flow";
 type Selection = { kind: "stage"; name: string } | { kind: "call"; id: number } | null;
 
-function readHash(): { run: string | null; call: number | null; obj: number | null; stage: string | null } {
+function readHash(): { run: string | null; call: number | null; obj: number | null; stage: string | null; flow: boolean } {
   const p = new URLSearchParams(location.hash.slice(1));
   const num = (k: string) => (p.get(k) ? Number(p.get(k)) : null);
-  return { run: p.get("run"), call: num("call"), obj: num("obj"), stage: p.get("stage") };
+  return { run: p.get("run"), call: num("call"), obj: num("obj"), stage: p.get("stage"), flow: p.get("view") === "flow" };
 }
+
+// Back/forward: a user navigation first duplicates the current history entry, then the hash effect replaces the
+// new top entry with the new state. Automatic moves (opening a run on its failure, applying popstate) don't push.
+const push = () => history.pushState(null, "", location.href);
 
 export function App() {
   const initial = useMemo(readHash, []);
-  const pendingCall = useRef(initial.call);  // the URL's call, opened once its run has loaded
-  const pendingObj = useRef(initial.obj);  // likewise for the object followed in Data Flow
-  const pendingStage = useRef(initial.stage);  // and the stage opened at Level 2
+  const pending = useRef<ReturnType<typeof readHash> | null>(initial);  // what the URL asks for, once its run has loaded
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [runId, setRunId] = useState<string | null>(initial.run);
   const [view, setView] = useState<View>("stages");
@@ -51,7 +53,7 @@ export function App() {
     }).catch((e) => setProblem(String(e)));
   }, []);
 
-  const openCall = useCallback(
+  const goCall = useCallback(
     async (id: number) => {
       setView("calls");
       setValue(null);
@@ -62,7 +64,7 @@ export function App() {
     [tree.reveal],
   );
 
-  const showStage = useCallback((name: string) => {
+  const goStage = useCallback((name: string) => {
     setOpenStage(name);
     setSelection(null);
     setValue(null);
@@ -79,11 +81,34 @@ export function App() {
     };
   }, [runId, openStage]);
 
-  const follow = useCallback((oid: number) => {
+  const goFollow = useCallback((oid: number | null) => {
     setFollowed(oid);
     setValue(null);
     setView("flow");
   }, []);
+
+  const goOverview = useCallback(() => {
+    setView("stages");
+    setSelection(null);
+    setValue(null);
+    setOpenStage(null);
+  }, []);
+
+  const openCall = useCallback((id: number) => { push(); goCall(id); }, [goCall]);
+  const showStage = useCallback((name: string) => { push(); goStage(name); }, [goStage]);
+  const follow = useCallback((oid: number | null) => { push(); goFollow(oid); }, [goFollow]);
+  const toOverview = () => { push(); goOverview(); };
+
+  /** Open what the URL asked for; without anything, a run opens on its failure (FR-VIZ-8) or its overview. */
+  const applyPending = useCallback((err: ErrorPath | null) => {
+    const h = pending.current;
+    pending.current = null;
+    if (h?.obj != null || h?.flow) goFollow(h.obj);
+    else if (h?.stage) goStage(h.stage);
+    else if (h?.call != null) goCall(h.call);
+    else if (err) goCall(err.origin.id);
+    else goOverview();
+  }, [goFollow, goStage, goCall, goOverview]);
 
   useEffect(() => {
     setFlow(null);
@@ -99,7 +124,6 @@ export function App() {
     if (runId && view === "flow" && objects === undefined) api.objects(runId).then(setObjects).catch((e) => setProblem(String(e)));
   }, [runId, view, objects]);
 
-  // A run opens on its failure if it has one (FR-VIZ-8), else on the stage overview.
   useEffect(() => {
     if (!runId) return;
     tree.reset();
@@ -116,15 +140,7 @@ export function App() {
       if (!live) return;
       setStages(g);
       setError(err);
-      const pending = runId === initial.run ? pendingCall.current : null;
-      const pendingFlow = runId === initial.run ? pendingObj.current : null;
-      const pendingL2 = runId === initial.run ? pendingStage.current : null;
-      pendingCall.current = pendingObj.current = pendingStage.current = null;
-      if (pendingFlow) follow(pendingFlow);
-      else if (pendingL2) showStage(pendingL2);
-      else if (pending) openCall(pending);
-      else if (err) openCall(err.origin.id);
-      else setView("stages");
+      applyPending(err);
     }).catch((e) => setProblem(String(e)));
     return () => {
       live = false;
@@ -134,11 +150,22 @@ export function App() {
   useEffect(() => {
     const p = new URLSearchParams();
     if (runId) p.set("run", runId);
-    if (view === "flow" && followed != null) p.set("obj", String(followed));
+    if (view === "flow") p.set(followed != null ? "obj" : "view", followed != null ? String(followed) : "flow");
     else if (view === "stage" && openStage) p.set("stage", openStage);
     else if (selection?.kind === "call") p.set("call", String(selection.id));
     history.replaceState(null, "", `#${p}`);
   }, [runId, selection, view, followed, openStage]);
+
+  useEffect(() => {
+    const onPop = () => {
+      const h = readHash();
+      pending.current = h;
+      if (h.run && h.run !== runId) setRunId(h.run);  // the run's effect applies the rest once it has loaded
+      else applyPending(null);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [runId, applyPending]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -148,7 +175,7 @@ export function App() {
       }
       if (e.key === "Escape" && !searching) {
         if (value) setValue(null);
-        else if (view !== "stages") setView("stages");
+        else if (view !== "stages") { push(); setView("stages"); }
       }
     };
     window.addEventListener("keydown", onKey);
@@ -161,12 +188,11 @@ export function App() {
   const isFailureView = view === "calls" && selection?.kind === "call" && error?.origin.id === selection.id;
   const level = view === "flow" ? "Data Flow" : view === "stage" ? "L2 · Components" : value ? "L4 · Value" : view === "stages" ? "L1 · Overview" : isFailureView ? "L3 · Failure" : selection ? "L3 · Function" : "L3 · Calls";
 
-  const toOverview = () => { setView("stages"); setSelection(null); setValue(null); setOpenStage(null); };
   const crumbs: { label: string; onClick?: () => void }[] = [{ label: "Run", onClick: toOverview }];
   if (run) crumbs.push({ label: runLabel(run), onClick: toOverview });
   if (view === "stage" && openStage) crumbs.push({ label: openStage });
   if (view === "flow") {
-    crumbs.push({ label: "Data Flow", onClick: () => setFollowed(null) });
+    crumbs.push({ label: "Data Flow", onClick: () => follow(null) });
     if (flow) crumbs.push({ label: `${flow.name ?? shortName(flow.type ?? "object")} #${flow.object_id}` });
   } else if (selection?.kind === "stage") crumbs.push({ label: selection.name });
   if (view !== "flow" && selectedCall) {
@@ -187,8 +213,8 @@ export function App() {
           </div>
         )}
         <div className="tabs" role="tablist">
-          <button className={view !== "flow" ? "active" : ""} onClick={() => setView(selection?.kind === "call" ? "calls" : openStage ? "stage" : "stages")}>Execution Flow</button>
-          <button className={view === "flow" ? "active" : ""} onClick={() => runId && (value?.object_id != null ? follow(value.object_id) : setView("flow"))}
+          <button className={view !== "flow" ? "active" : ""} onClick={() => { push(); setView(selection?.kind === "call" ? "calls" : openStage ? "stage" : "stages"); }}>Execution Flow</button>
+          <button className={view === "flow" ? "active" : ""} onClick={() => runId && follow(value?.object_id ?? followed)}
             title="Follow one object across calls">Data Flow</button>
           <button disabled title="Coming next: compare two runs">Diff</button>
         </div>
@@ -214,7 +240,7 @@ export function App() {
         <aside className="panel">
           <div className="label">Runs</div>
           {runs.map((r) => (
-            <button key={r.id} className={`run-row ${r.id === runId ? "active" : ""}`} onClick={() => setRunId(r.id)} title={r.id}>
+            <button key={r.id} className={`run-row ${r.id === runId ? "active" : ""}`} onClick={() => { push(); pending.current = null; setRunId(r.id); }} title={r.id}>
               <span className={r.error ? "muted" : r.outcome} style={{ fontSize: 10 }}>{r.error ? "?" : outcomeIcon[r.outcome]}</span>
               <span className="name">{runLabel(r)}</span>
               <span className="muted" style={{ fontSize: 11 }}>{ms(r.duration_ns)}</span>
@@ -268,7 +294,7 @@ export function App() {
                   focusError={focusError}
                   hideOpaqueLeaves={hideOpaque}
                   centerOn={centerOn}
-                  onSelect={(key) => { if (key.startsWith("c")) { setSelection({ kind: "call", id: Number(key.slice(1)) }); setValue(null); } else tree.toggle(key); }}
+                  onSelect={(key) => { if (key.startsWith("c")) { push(); setSelection({ kind: "call", id: Number(key.slice(1)) }); setValue(null); } else tree.toggle(key); }}
                 />
               </ReactFlowProvider>
             </>
@@ -305,7 +331,7 @@ export function App() {
           {view !== "flow" && view !== "stage" && <>
           {runId && value && <ValueInspector run={runId} binding={value} onBack={() => setValue(null)} onOpenCall={openCall} onFollow={follow} />}
           {runId && !value && selection?.kind === "call" && (
-            <CallInspector run={runId} id={selection.id} error={error} onOpenCall={openCall} onOpenValue={setValue} />
+            <CallInspector run={runId} id={selection.id} error={error} onOpenCall={openCall} onOpenValue={(b) => { push(); setValue(b); }} />
           )}
           {!value && selection?.kind === "stage" && stages && (
             <StageInspector stage={stages.nodes.find((n) => n.name === selection.name)!} onOpenCall={openCall} onOpenStage={showStage} />
