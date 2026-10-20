@@ -608,7 +608,8 @@ class Tracer:
         tb, frames = exc.__traceback__, []
         while tb is not None:
             co = tb.tb_frame.f_code
-            if not (co.co_filename.startswith(_PKG_DIR) or co.co_filename.startswith("<frozen runpy")):
+            # start at the first traced frame: the runner/pytest/pluggy frames above it are not the user's story
+            if (frames or self._codes.get(co)) and not co.co_filename.startswith(_PKG_DIR):
                 frames.append([co.co_filename, tb.tb_lineno, co.co_qualname])
             tb = tb.tb_next
         cause = exc.__cause__ or exc.__context__
