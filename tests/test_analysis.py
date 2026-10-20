@@ -105,6 +105,28 @@ def test_object_flow_hops_to_the_objects_the_data_became(tmp_path):
     assert [(b["qualname"], b["object_id"], b["preview"]) for b in flow["became"]] == [("load", None, "3")]
 
 
+def from_json(d):
+    return d
+
+
+def number(x):
+    return float(x)
+
+
+def entry():
+    import json
+
+    main()
+    return json.loads('{"x": 1.5}', object_hook=from_json, parse_float=number)  # json calls back into the project
+
+
+def test_a_library_calling_back_does_not_hide_the_entry_fan_out(tmp_path):
+    with vizcontrol.trace(output=tmp_path / "cb.vizc") as t:
+        entry()
+    names = [n["name"] for n in A.stages(Reader(t.path))["nodes"]]
+    assert {"extract", "transform", "load"} <= set(names) and "main" not in names
+
+
 def ping(n):
     return pong(n - 1) if n else 0
 
