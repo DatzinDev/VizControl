@@ -78,6 +78,13 @@ line of Level 1.
 Mermaid flowchart (`vizcontrol.diagram`): the main path drawn thick, raised stages red, libraries dashed, and in
 Level 2 module › class subgraphs with neighbouring stages as single nodes.
 
+### Route map (many runs)
+
+`route_map(graphs, outcomes)` joins the runs' stage graphs: one node per stage and one edge per stage pair that any
+run went through, each with the ids of the runs that did and the sums of their counts, plus each run's route (its
+stages and edges). Its main path starts at the most common entry stage. Served as `GET /api/map` over every
+readable run; with `pytest --vizcontrol` that is the map of the whole suite, one route per test.
+
 ### One stage opened, Level 2 (FR-VIZ-2)
 
 `stage_detail` makes one pass over all calls, with the same stage names as Level 1:

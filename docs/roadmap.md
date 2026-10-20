@@ -9,6 +9,7 @@ The trace format and APIs are designed so none of them needs a breaking change.
 | 1 | pytest plugin, if not finished in v1 (FR-RUN-4) | runners | Done: `pytest --vizcontrol`. |
 | 2 | Data Flow view and object evolution (FR-ANA-4/6, FR-VIZ-10) | analysis, viewer | Done: Data Flow view, nested objects included. Exact attribution still needs the `state` level. |
 | 3 | Run comparison (FR-ANA-7, FR-VIZ-11) | analysis.compare | Diff view done. Pending: a `vizcontrol diff a.vizc b.vizc` command and differing return values. |
+| — | Route map over many runs | analysis.route_map, viewer | Done: Map tab and `/api/map`, each run's route on the joined stage graph. |
 | 4 | Chronological replay (FR-VIZ-12) | `seq`, timeline | Scrub events in order and watch values change. |
 | 5 | Async capture (FR-CAP-12) | capture | Task creation/await causality via `asyncio` task hooks, so coroutines nest by logical caller. |
 | 6 | FastAPI/ASGI instrumentation (FR-RUN-5) | 5, runners | Middleware, one run per request, sampling or header trigger. |

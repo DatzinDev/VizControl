@@ -154,6 +154,10 @@ def api(runs: Runs, path: str, q: dict):
     """Dispatch one API request. Returns JSON-able data or raises NotFound."""
     if path == "/api/runs":
         return [_summary(runs, i) for i in runs.ids()]
+    if path == "/api/map":
+        heads, ids = runs.heads(), runs.readable()
+        return A.route_map({i: runs.cached(i, A.stages, heads) for i in ids},
+                           {i: runs.reader(i).run()["outcome"] for i in ids})
     if path == "/api/compare":  # both ids must be registered runs: reader() looks them up, never builds a path
         a, b = q.get("a", [""])[0], q.get("b", [""])[0]
         return A.compare(runs.reader(a), runs.reader(b))
