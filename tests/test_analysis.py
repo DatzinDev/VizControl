@@ -289,6 +289,13 @@ def test_a_project_of_many_modules_is_staged_by_package(tmp_path, monkeypatch):
     with vizcontrol.trace(output=tmp_path / "all.vizc") as t:
         pkgdriver.go()
     assert [n["name"] for n in A.stages(Reader(t.path))["nodes"]] == ["pkgdriver", "small", "big"]
+    (tmp_path / "solo.py").write_text("import big.m1\n\n\ndef go():\n    return " + " + ".join(
+        f"big.m{i}.f()" for i in range(13)) + "\n")
+    import solo
+
+    with vizcontrol.trace(output=tmp_path / "solo.vizc") as t:
+        solo.go()
+    assert [n["name"] for n in A.stages(Reader(t.path))["nodes"]] == ["solo", "big"]  # not split into functions
     with vizcontrol.trace(output=tmp_path / "one.vizc") as t:
         pkgdriver.one()
     assert "big.m0" in [n["name"] for n in A.stages(Reader(t.path))["nodes"]]  # alone, few modules: depth 2

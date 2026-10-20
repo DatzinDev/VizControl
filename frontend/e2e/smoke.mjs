@@ -236,7 +236,7 @@ if (bigBase) await check("a package of many modules is one stage, opened on its 
   const c = await nodeCenter("big");
   await page.mouse.click(c.x, c.y, { count: 2 });
   await wait(1500);
-  expect((await page.$$(".react-flow__node-module")).length === 13, "the 13 modules are not shown closed");
+  expect((await page.$$(".react-flow__node-module")).length === 14, "the 14 modules (with __init__) are not shown closed");
   expect((await page.$$(".react-flow__node-fn")).length === 0, "functions show before opening a module");
   await page.$$eval(".react-flow__node-module", (ns) => ns.find((n) => n.textContent.includes("m3.py")).click());
   await wait(1500);

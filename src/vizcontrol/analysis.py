@@ -160,7 +160,7 @@ class Stager:
                 self.heads[c["id"]] = (s, self.namer(c["module"], c["observed"]))
         if rules:
             return
-        if heads is None and len(module_stages(reader, depth)) < MIN_STAGES:
+        if heads is None and len(module_stages(reader, 2)) < MIN_STAGES:  # few modules, not few after grouping
             self._fan_out(reader, codes)
         for c in codes.values():
             if heads and (c["module"], c["qualname"]) in heads:

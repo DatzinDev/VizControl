@@ -73,7 +73,7 @@ class Runs:
         functions: none when the runs together have enough module stages, else every head any run found on its own."""
         ids = self.readable()
         depth = A.auto_depth(set().union(*(self.cached(i, A.module_stages, 2) for i in ids)))
-        if len(set().union(*(self.cached(i, A.module_stages, depth) for i in ids))) >= A.MIN_STAGES:
+        if len(set().union(*(self.cached(i, A.module_stages, 2) for i in ids))) >= A.MIN_STAGES:
             return frozenset(), depth
         return frozenset().union(*(self.cached(i, A.Stager, None, depth).names for i in ids)), depth
 
