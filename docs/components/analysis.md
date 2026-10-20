@@ -54,7 +54,8 @@ A stage is a set of modules, or the calls below a head function. `Stager` assign
    many modules, the depth is 1: `black.linegen`, `black.nodes`, ... are one stage `black`, opened at Level 2.
    A configured `stage_depth` is used as is. `__main__` is named after the script (`checkout.py` → `checkout`)
    or the `-m` module. Opaque calls group under their top-level package (`sqlalchemy`, `requests`) and the stage
-   is marked not observed inside.
+   is marked not observed inside. A standard library stage (`sys.stdlib_module_names`) is also marked `stdlib`:
+   the main path never goes into one, and the viewer and Mermaid leave them out unless they raised.
 3. Flat projects: with no function rules and fewer than 3 observed module stages, a one-file script would be one
    stage. Then each module stage is split: from the codes entering it (root calls, or calls from another stage),
    a chain of lone callees (`main()` → `run()`) stays the stage, and the functions the chain first fans out to
