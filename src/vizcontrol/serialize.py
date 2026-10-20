@@ -64,13 +64,15 @@ class Encoded:
     __slots__ = ("data", "object_id", "type", "truncated", "redacted")
 
     def __init__(self, data, object_id, type_, truncated, redacted):
-        self.data, self.object_id, self.type, self.truncated, self.redacted = data, object_id, type_, truncated, redacted
+        self.data, self.object_id, self.type = data, object_id, type_
+        self.truncated, self.redacted = truncated, redacted
 
 
 class Encoder:
     def __init__(self, config: Config):
         v, r = config.values, config.redact
-        self.max_depth, self.max_items, self.max_str, self.max_bytes = v.max_depth, v.max_items, v.max_str, v.max_value_bytes
+        self.max_depth, self.max_items, self.max_str = v.max_depth, v.max_items, v.max_str
+        self.max_bytes = v.max_value_bytes
         self.max_nodes = v.max_nodes
         self.safe_names = set(v.safe_repr_types)
         names = (DEFAULT_REDACT_NAMES if r.defaults else ()) + tuple(r.names)
@@ -189,7 +191,8 @@ class Encoder:
                 self._truncated = True
             return out
         if kind == "enum":
-            return {"t": "repr", "type": type_name(t), "v": f"{t.__qualname__}.{object.__getattribute__(obj, '_name_')}"}
+            member = object.__getattribute__(obj, "_name_")
+            return {"t": "repr", "type": type_name(t), "v": f"{t.__qualname__}.{member}"}
         if kind == "opaque":
             return self._opaque(obj)
 
