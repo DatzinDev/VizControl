@@ -219,9 +219,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "serve":
         from vizcontrol.server import serve
 
+        if not Path(args.path).exists():
+            print(f"vizcontrol: no runs yet: {args.path} does not exist. Trace a program first: "
+                  "vizcontrol run --serve app.py", file=sys.stderr)
+            return 1
         try:
             return serve(args.path, args.host, args.port, not args.no_browser)
-        except (FileNotFoundError, OSError) as e:
+        except OSError as e:
             print(f"vizcontrol: {e}", file=sys.stderr)
             return 1
     return _ls(args.dir)

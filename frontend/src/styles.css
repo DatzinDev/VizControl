@@ -86,6 +86,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .banner { position: absolute; top: 12px; left: 16px; z-index: 5; color: var(--raised); border: 1px solid var(--raised); background: var(--surface); border-radius: 6px; padding: 6px 12px; }
 .legend { position: absolute; bottom: 12px; left: 16px; z-index: 5; display: flex; gap: 12px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); font-size: 11px; color: var(--muted); }
 .empty { display: grid; place-items: center; height: 100%; color: var(--muted); }
+.first-run { max-width: 460px; color: var(--text); }
+.first-run pre { background: var(--surface-2); padding: 12px; border-radius: 6px; font-size: 12px; }
 .react-flow { --xy-background-color: var(--bg); }
 .react-flow__controls { box-shadow: none; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .react-flow__controls-button { background: var(--surface); border-color: var(--border); fill: var(--muted); }
