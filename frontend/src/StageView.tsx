@@ -1,19 +1,20 @@
 import { Background, Controls, Edge, MarkerType, Node, ReactFlow } from "@xyflow/react";
 import { useEffect, useState } from "react";
-import { StageGraph } from "./api";
+import { Route, StageGraph } from "./api";
 import { layout } from "./layout";
 import { STAGE_H, STAGE_W, StageNodeView } from "./nodes";
 
 const nodeTypes = { stage: StageNodeView };
 
-/** Level 1: stages (inferred from module paths) and the calls between them; the main path in accent. */
+/** Level 1: stages (inferred) and the calls between them; the main path in accent, or a run's route on the map. */
 export function StageView(props: {
   graph: StageGraph;
   selected: string | null;
   onSelect: (name: string) => void;
   onOpen: (name: string) => void;
+  route?: Route;
 }) {
-  const { graph, selected, onSelect, onOpen } = props;
+  const { graph, selected, onSelect, onOpen, route } = props;
   const [positions, setPositions] = useState<Map<string, { x: number; y: number }> | null>(null);
 
   useEffect(() => {
@@ -26,9 +27,11 @@ export function StageView(props: {
 
   if (!positions) return null;
   const onMain = (a: string, b: string) => {
+    if (route) return route.edges.some(([x, y]) => x === a && y === b);
     const i = graph.main_path.indexOf(a);
     return i >= 0 && graph.main_path[i + 1] === b;
   };
+  const isMain = (name: string) => (route ? route.stages : graph.main_path).includes(name);
   const opaque = new Set(graph.nodes.filter((n) => !n.observed).map((n) => n.name));
   const nodes: Node[] = graph.nodes.map((n) => ({
     id: n.name,
@@ -37,7 +40,7 @@ export function StageView(props: {
     // fixed size: without it React Flow hides re-created nodes until measured, and a double-click falls through
     width: STAGE_W,
     height: STAGE_H,
-    data: { stage: n, main: graph.main_path.includes(n.name), selected: selected === n.name },
+    data: { stage: n, main: isMain(n.name), selected: selected === n.name },
   }));
   const edges: Edge[] = graph.edges.map((e) => {
     const main = onMain(e.from, e.to);
@@ -46,7 +49,7 @@ export function StageView(props: {
       id: `${e.from}->${e.to}`,
       source: e.from,
       target: e.to,
-      label: String(e.calls),
+      label: e.runs ? `${e.runs.length} run${e.runs.length === 1 ? "" : "s"}` : String(e.calls),
       type: "smoothstep",
       style: { stroke: color, strokeWidth: main ? 2 : 1, strokeDasharray: opaque.has(e.to) ? "5 4" : undefined },
       markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },

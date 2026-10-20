@@ -1,24 +1,28 @@
 import { ReactFlowProvider } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, Binding, CallNode, ErrorPath, ObjectFlow, ObjectSummary, RunDiff, RunSummary, StageDetail, StageGraph } from "./api";
+import { api, Binding, CallNode, ErrorPath, ObjectFlow, ObjectSummary, RouteMap, RunDiff, RunSummary, StageDetail, StageGraph } from "./api";
 import { CallTreeView } from "./CallTreeView";
 import { ComponentView } from "./ComponentView";
 import { DataFlowView, ObjectPicker } from "./DataFlowView";
 import { DiffInspector, DiffPicker, DiffView } from "./DiffView";
 import { ms, outcomeIcon, runLabel, shortName } from "./format";
 import { CallInspector, ComponentInspector, ObjectInspector, RunInspector, StageInspector, ValueInspector } from "./Inspector";
+import { MapInspector } from "./MapView";
 import { SearchPalette } from "./SearchPalette";
 import { StageView } from "./StageView";
 import { callKey, Item, Key, useCallTree } from "./useCallTree";
 
-type View = "stages" | "stage" | "calls" | "flow" | "diff";
+type View = "stages" | "stage" | "calls" | "flow" | "diff" | "map";
 type Selection = { kind: "stage"; name: string } | { kind: "call"; id: number } | null;
 
-function readHash(): { run: string | null; call: number | null; obj: number | null; stage: string | null; flow: boolean; vs: string | null; diff: boolean } {
+type Wanted = { run: string | null; call: number | null; obj: number | null; stage: string | null; flow: boolean; vs: string | null; diff: boolean; map: boolean };
+const nothing: Wanted = { run: null, call: null, obj: null, stage: null, flow: false, vs: null, diff: false, map: false };
+
+function readHash(): Wanted {
   const p = new URLSearchParams(location.hash.slice(1));
   const num = (k: string) => (p.get(k) ? Number(p.get(k)) : null);
   return { run: p.get("run"), call: num("call"), obj: num("obj"), stage: p.get("stage"), flow: p.get("view") === "flow",
-    vs: p.get("vs"), diff: p.get("view") === "diff" };
+    vs: p.get("vs"), diff: p.get("view") === "diff", map: p.get("view") === "map" };
 }
 
 // Back/forward: a user navigation first duplicates the current history entry, then the hash effect replaces the
@@ -27,7 +31,7 @@ const push = () => history.pushState(null, "", location.href);
 
 export function App() {
   const initial = useMemo(readHash, []);
-  const pending = useRef<ReturnType<typeof readHash> | null>(initial);  // what the URL asks for, once its run has loaded
+  const pending = useRef<Wanted | null>(initial);  // what the URL asks for, once its run has loaded
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [runId, setRunId] = useState<string | null>(initial.run);
   const [loadedRun, setLoadedRun] = useState<string | null>(null);  // the URL follows the state only once a run has loaded
@@ -41,6 +45,7 @@ export function App() {
   const [followed, setFollowed] = useState<number | null>(null);
   const [compareWith, setCompareWith] = useState<string | null>(null);
   const [diff, setDiff] = useState<RunDiff | null>(null);
+  const [routeMap, setRouteMap] = useState<RouteMap | null>(null);
   const [flow, setFlow] = useState<ObjectFlow | null>(null);
   const [objects, setObjects] = useState<ObjectSummary[] | undefined>(undefined);
   const [centerOn, setCenterOn] = useState<Key | null>(null);
@@ -110,6 +115,21 @@ export function App() {
     };
   }, [runId, compareWith, view === "diff"]);
 
+  const goMap = useCallback(() => {
+    setView("map");
+    setSelection(null);
+    setValue(null);
+  }, []);
+
+  useEffect(() => {
+    if (view !== "map") return;
+    let live = true;
+    api.map().then((m) => live && setRouteMap(m)).catch((e) => setProblem(String(e)));
+    return () => {
+      live = false;
+    };
+  }, [view === "map"]);
+
   const goOverview = useCallback(() => {
     setView("stages");
     setSelection(null);
@@ -125,21 +145,29 @@ export function App() {
   const openIn = (side: "a" | "b", id: number) => {
     if (side === "a" || !compareWith) return openCall(id);
     push();
-    pending.current = { run: compareWith, call: id, obj: null, stage: null, flow: false, vs: null, diff: false };
+    pending.current = { ...nothing, run: compareWith, call: id };
     setRunId(compareWith);
+  };
+  /** Open a stage from the map, in the current run if it went through the stage. */
+  const openFromMap = (id: string, stage: string) => {
+    if (id === runId) return showStage(stage);
+    push();
+    pending.current = { ...nothing, run: id, stage };
+    setRunId(id);
   };
 
   /** Open what the URL asked for; without anything, a run opens on its failure (FR-VIZ-8) or its overview. */
   const applyPending = useCallback((err: ErrorPath | null) => {
     const h = pending.current;
     pending.current = null;
-    if (h?.vs || h?.diff) goDiff(h.vs);
+    if (h?.map) goMap();
+    else if (h?.vs || h?.diff) goDiff(h.vs);
     else if (h?.obj != null || h?.flow) goFollow(h.obj);
     else if (h?.stage) goStage(h.stage);
     else if (h?.call != null) goCall(h.call);
     else if (err) goCall(err.origin.id);
     else goOverview();
-  }, [goDiff, goFollow, goStage, goCall, goOverview]);
+  }, [goMap, goDiff, goFollow, goStage, goCall, goOverview]);
 
   useEffect(() => {
     setFlow(null);
@@ -185,7 +213,8 @@ export function App() {
     if (loadedRun !== runId) return;
     const p = new URLSearchParams();
     if (runId) p.set("run", runId);
-    if (view === "diff") p.set(compareWith ? "vs" : "view", compareWith ?? "diff");
+    if (view === "map") p.set("view", "map");
+    else if (view === "diff") p.set(compareWith ? "vs" : "view", compareWith ?? "diff");
     else if (view === "flow") p.set(followed != null ? "obj" : "view", followed != null ? String(followed) : "flow");
     else if (view === "stage" && openStage) p.set("stage", openStage);
     else if (selection?.kind === "call") p.set("call", String(selection.id));
@@ -243,13 +272,16 @@ export function App() {
   const selectedCall: CallNode | undefined =
     selection?.kind === "call" ? tree.callItem(callKey(selection.id)) ?? error?.path.find((c) => c.id === selection.id) : undefined;
   const isFailureView = view === "calls" && selection?.kind === "call" && error?.origin.id === selection.id;
-  const level = view === "diff" ? "Diff" : view === "flow" ? "Data Flow" : view === "stage" ? "L2 · Components" : value ? "L4 · Value" : view === "stages" ? "L1 · Overview" : isFailureView ? "L3 · Failure" : selection ? "L3 · Function" : "L3 · Calls";
+  const level = view === "map" ? "Map · all runs" : view === "diff" ? "Diff" : view === "flow" ? "Data Flow" : view === "stage" ? "L2 · Components" : value ? "L4 · Value" : view === "stages" ? "L1 · Overview" : isFailureView ? "L3 · Failure" : selection ? "L3 · Function" : "L3 · Calls";
 
   const crumbs: { label: string; onClick?: () => void }[] = [{ label: "Run", onClick: toOverview }];
   if (run) crumbs.push({ label: runLabel(run), onClick: toOverview });
   if (view === "stage" && openStage) crumbs.push({ label: openStage });
   const runB = runs.find((r) => r.id === compareWith);
-  if (view === "diff") {
+  if (view === "map") {
+    crumbs.splice(0, crumbs.length, { label: "Map", onClick: () => setSelection(null) });
+    if (selection?.kind === "stage") crumbs.push({ label: selection.name });
+  } else if (view === "diff") {
     crumbs.splice(0, 1, { label: "Compare", onClick: () => { push(); goDiff(null); } });
     if (runB) crumbs.push({ label: runLabel(runB) });
   } else if (view === "flow") {
@@ -274,10 +306,11 @@ export function App() {
           </div>
         )}
         <div className="tabs" role="tablist">
-          <button className={view !== "flow" && view !== "diff" ? "active" : ""} onClick={() => { push(); setView(selection?.kind === "call" ? "calls" : openStage ? "stage" : "stages"); }}>Execution Flow</button>
+          <button className={view !== "flow" && view !== "diff" && view !== "map" ? "active" : ""} onClick={() => { push(); setView(selection?.kind === "call" ? "calls" : openStage ? "stage" : "stages"); }}>Execution Flow</button>
           <button className={view === "flow" ? "active" : ""} onClick={() => runId && follow(value?.object_id ?? followed)}
             title="Follow one object across calls">Data Flow</button>
           <button className={view === "diff" ? "active" : ""} onClick={() => { if (runId) { push(); goDiff(compareWith); } }} title="Compare this run with another">Diff</button>
+          <button className={view === "map" ? "active" : ""} onClick={() => { push(); goMap(); }} title="All runs on one map, each run's route on it">Map</button>
         </div>
         <div className="spacer" />
         <button className="chip search-btn" onClick={() => runId && setSearching(true)}>
@@ -301,7 +334,7 @@ export function App() {
         <aside className="panel">
           <div className="label">Runs</div>
           {runs.map((r) => (
-            <button key={r.id} className={`run-row ${r.id === runId ? "active" : ""}`} onClick={() => { push(); pending.current = null; setRunId(r.id); }} title={r.id}>
+            <button key={r.id} className={`run-row ${r.id === runId ? "active" : ""}`} onClick={() => { push(); pending.current = view === "map" ? { ...nothing, run: r.id, map: true } : null; setRunId(r.id); }} title={r.id}>
               <span className={r.error ? "muted" : r.outcome} style={{ fontSize: 10 }}>{r.error ? "?" : outcomeIcon[r.outcome]}</span>
               <span className="name">{runLabel(r)}</span>
               <span className="muted" style={{ fontSize: 11 }}>{ms(r.duration_ns)}</span>
@@ -351,6 +384,23 @@ export function App() {
                 onOpen={showStage}
               />
             </>
+          )}
+          {!problem && view === "map" && (
+            routeMap ? (
+              <>
+                <div className="hint">Every run on one map · the selected run's route in accent · double-click a stage to open it</div>
+                <StageView
+                  graph={routeMap}
+                  route={routeMap.routes.find((r) => r.run === runId)}
+                  selected={selection?.kind === "stage" ? selection.name : null}
+                  onSelect={(name) => setSelection({ kind: "stage", name })}
+                  onOpen={(name) => {
+                    const ids = routeMap.nodes.find((n) => n.name === name)?.runs ?? [];
+                    if (ids.length) openFromMap(runId && ids.includes(runId) ? runId : ids[0], name);
+                  }}
+                />
+              </>
+            ) : <div className="empty">Loading…</div>
           )}
           {!problem && view === "calls" && (
             <>
@@ -410,8 +460,12 @@ export function App() {
           {view === "diff" && diff && <DiffInspector diff={diff} onOpen={openIn} />}
           {view === "diff" && !diff && run && <RunInspector run={run} error={error} onOpenCall={openCall} />}
           {view === "flow" && !flow && run && <RunInspector run={run} error={error} onOpenCall={openCall} />}
+          {view === "map" && routeMap && (
+            <MapInspector map={routeMap} runs={runs} current={runId} onOpen={openFromMap}
+              selected={selection?.kind === "stage" ? routeMap.nodes.find((n) => n.name === selection.name) ?? null : null} />
+          )}
           {view === "stage" && detail && <ComponentInspector detail={detail} onOpenCall={openCall} onOpenStage={showStage} />}
-          {view !== "flow" && view !== "stage" && view !== "diff" && <>
+          {view !== "flow" && view !== "stage" && view !== "diff" && view !== "map" && <>
           {runId && value && <ValueInspector run={runId} binding={value} onBack={() => setValue(null)} onOpenCall={openCall} onFollow={follow} />}
           {runId && !value && selection?.kind === "call" && (
             <CallInspector run={runId} id={selection.id} error={error} onOpenCall={openCall} onOpenValue={(b) => { push(); setValue(b); }}
