@@ -173,10 +173,16 @@ await check("Diff compares two runs and explains where they split", async () => 
   expect((await text(".chip.outline")).includes("vip"), "did not switch to run B");
 });
 
+const showStdlib = async () => {
+  await page.$$eval("label.toggle", (ls) => ls.find((l) => l.textContent.includes("standard library")).querySelector("input").click());
+  await wait(1200);
+};
+
 await check("the map joins all runs and shows each run's route", async () => {
   await page.goto(`${base}#run=vip.vizc&view=map`, { waitUntil: "networkidle0" });
   await wait(1200);
   expect((await text(".level")) === "Map · all runs", `level is ${await text(".level")}`);
+  await showStdlib();
   const json = () => page.$$eval(".stage", (ns) => ns.find((n) => n.textContent.includes("json"))?.className ?? "");
   expect((await json()).includes("dim"), "json is on the vip route, but vip never reached it");
   const c = await nodeCenter("json");
@@ -198,6 +204,8 @@ await check("a failed run's overview marks where it stopped and what it never re
   await wait(1200);
   expect((await text(".level")) === "L1 · Overview", `level is ${await text(".level")}`);
   expect((await text(".stage.stopped .name")) === "app.pricing", "the stopped stage is not app.pricing");
+  expect(!(await page.$(".stage.ghost")), "json, standard library, shows before asking for it");
+  await showStdlib();
   expect((await text(".stage.ghost .name")) === "json", "json is not shown as not reached");
   await page.$$eval(".inspector .link", (ls) => ls.find((l) => l.textContent.startsWith("Compare with")).click());
   await wait(1200);

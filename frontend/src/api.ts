@@ -32,6 +32,7 @@ export interface StageNode {
   first_seq: number;
   first_call: number;
   observed: boolean;
+  stdlib: boolean;  // a standard library stage (not observed inside): hidden unless asked for or raised
   modules: string[];
   runs?: string[];  // in the route map: the runs that went through it
 }

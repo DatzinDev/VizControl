@@ -1,5 +1,5 @@
 import { Background, Controls, Edge, MarkerType, Node, ReactFlow } from "@xyflow/react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Route, StageGraph, StageNode } from "./api";
 
 /** Stages another run reached and this one didn't, with the edges that lead to them: evidence from that run. */
@@ -22,20 +22,37 @@ export function StageView(props: {
   route?: Route;
   stopped?: string;  // the stage where the run failed
   ghosts?: Ghosts;  // stages another run reached and this one didn't
+  showStdlib?: boolean;  // standard library stages are hidden unless they raised or the run stopped there
 }) {
-  const { graph, selected, onSelect, onOpen, route, stopped, ghosts } = props;
-  const [positions, setPositions] = useState<Map<string, { x: number; y: number }> | null>(null);
+  const { route, stopped, ghosts: allGhosts, showStdlib } = props;
+  const { selected, onSelect, onOpen } = props;
+  const [laid, setLaid] = useState<{ key: string; at: Map<string, { x: number; y: number }> } | null>(null);
 
+  const shown = (n: StageNode) => showStdlib || !n.stdlib || n.raised > 0 || n.name === stopped;
+  const graph = useMemo(() => {
+    const keep = new Set(props.graph.nodes.filter(shown).map((n) => n.name));
+    return { ...props.graph, nodes: props.graph.nodes.filter((n) => keep.has(n.name)),
+      edges: props.graph.edges.filter((e) => keep.has(e.from) && keep.has(e.to)) };
+  }, [props.graph, showStdlib, stopped]);
+  const ghosts = useMemo(() => {
+    if (!allGhosts) return undefined;
+    const keep = new Set([...graph.nodes, ...allGhosts.nodes.filter(shown)].map((n) => n.name));
+    return { ...allGhosts, nodes: allGhosts.nodes.filter((n) => keep.has(n.name)),
+      edges: allGhosts.edges.filter(([a, b]) => keep.has(a) && keep.has(b)) };
+  }, [allGhosts, graph]);
   const ghostEdges = ghosts?.edges ?? [];
+  // the view mounts (and fits) once the layout is for the nodes shown, not for the previous set
+  const key = [...graph.nodes, ...(ghosts?.nodes ?? [])].map((n) => n.name).join("\n");
   useEffect(() => {
     layout(
       [...graph.nodes, ...(ghosts?.nodes ?? [])].map((n) => ({ id: n.name, width: STAGE_W, height: STAGE_H })),
       [...graph.edges.map((e) => [e.from, e.to]), ...ghostEdges].map(([a, b]) => ({ id: `${a}->${b}`, source: a, target: b })),
       { layers: 44, nodes: 28 },
-    ).then(setPositions);
+    ).then((at) => setLaid({ key, at }));
   }, [graph, ghosts]);
 
-  if (!positions) return null;
+  if (laid?.key !== key) return null;
+  const positions = laid.at;
   const onMain = (a: string, b: string) => {
     if (route) return route.edges.some(([x, y]) => x === a && y === b);
     const i = graph.main_path.indexOf(a);
@@ -75,6 +92,7 @@ export function StageView(props: {
   }
   return (
     <ReactFlow
+      key={key}
       nodes={nodes}
       edges={edges}
       nodeTypes={nodeTypes}
