@@ -271,16 +271,12 @@ class Reader:
             "ORDER BY call.seq_start").fetchall()
 
     def code_calls(self) -> list[tuple]:
-        """Distinct (caller code_id, callee code_id) pairs; the caller is None for root calls."""
-        return self.db.execute("SELECT DISTINCT p.code_id, call.code_id FROM call "
-                               "LEFT JOIN call p ON p.id = call.parent_id").fetchall()
+        """(caller code_id, callee code_id, calls) for every pair that ran; the caller is None for root calls."""
+        return self.db.execute("SELECT p.code_id, call.code_id, COUNT(*) FROM call "
+                               "LEFT JOIN call p ON p.id = call.parent_id GROUP BY 1, 2").fetchall()
 
     def meta(self) -> dict[str, str]:
         return {r["key"]: r["value"] for r in self._all("SELECT key, value FROM meta")}
-
-    def code_counts(self) -> dict[int, int]:
-        """code_id -> how many calls ran it."""
-        return dict(self.db.execute("SELECT code_id, COUNT(*) FROM call GROUP BY code_id").fetchall())
 
     def roots(self) -> list[dict]:
         """Root calls, in time order. A thread id is not a thread: Python reuses idents once a thread ends."""

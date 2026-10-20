@@ -143,31 +143,34 @@ class Stager:
 
     def _fan_out(self, reader: Reader, codes: dict[int, dict]) -> None:
         base = {k: self.namer(c["module"], c["observed"]) for k, c in codes.items()}
-        counts = reader.code_counts()
-        callees: dict[object, set[int]] = defaultdict(set)  # (None, stage) stands for "outside the stage"
-        for caller, k in reader.code_calls():
+        # caller -> callee -> calls; ("root", stage) and ("in", stage) stand for root calls and calls from elsewhere
+        callees: dict[object, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+        for caller, k, n in reader.code_calls():
             if not codes[k]["observed"]:
                 continue
             if caller is None or base[caller] != base[k]:
-                callees[(None, base[k])].add(k)
+                callees[("root" if caller is None else "in", base[k])][k] += n
             elif codes[k]["kind"] not in ("module", "class"):
-                callees[caller].add(k)
+                callees[caller][k] += n
         for stage in {base[k] for k, c in codes.items() if c["observed"]}:
-            frontier, seen = [(None, stage)], set()
-            while frontier:
-                lone = []
-                for caller in frontier:
-                    ks = callees[caller] - seen
-                    seen |= ks
-                    fns = {k for k in ks if codes[k]["kind"] not in ("module", "class")}
-                    body = max(fns, key=lambda k: counts.get(k, 0), default=None)
-                    if len(fns) > 1 and counts.get(body, 0) >= LOOP_SHARE * sum(counts.get(k, 0) for k in fns):
-                        ks -= fns - {body}  # the loop body leads on; its few siblings stay in this stage
-                    elif len(fns) > 1:
-                        self.heads.update((k, (codes[k]["qualname"], stage)) for k in fns)
-                        ks -= fns
-                    lone += ks  # a lone function, an import or a class body: keep looking below it
-                frontier = lone
+            seen: set[int] = set()
+            # the program's own entry first: callbacks from a library (doctest, a test runner) enter afterwards
+            for frontier in ([("root", stage)], [("in", stage)]):
+                while frontier:
+                    lone = []
+                    for caller in frontier:
+                        calls = callees[caller]
+                        ks = set(calls) - seen
+                        seen |= ks
+                        fns = {k for k in ks if codes[k]["kind"] not in ("module", "class")}
+                        body = max(fns, key=calls.get, default=None)
+                        if len(fns) > 1 and calls[body] >= LOOP_SHARE * sum(calls[k] for k in fns):
+                            ks -= fns - {body}  # the loop body leads on; its few siblings stay in this stage
+                        elif len(fns) > 1:
+                            self.heads.update((k, (codes[k]["qualname"], stage)) for k in fns)
+                            ks -= fns
+                        lone += ks  # a lone function, an import or a class body: keep looking below it
+                    frontier = lone
 
     def step(self, module: str | None, observed, code_id: int, head: tuple | None) -> tuple[str, tuple | None]:
         """(stage of a call, the head that applies to its callees), given the head that applies to the call."""
