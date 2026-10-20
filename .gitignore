@@ -5,3 +5,5 @@ dist/
 build/
 .pytest_cache/
 .vizcontrol/
+node_modules/
+src/vizcontrol/viewer/static/

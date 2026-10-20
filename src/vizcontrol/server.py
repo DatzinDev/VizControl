@@ -76,7 +76,7 @@ def _summary(runs: Runs, run_id: str) -> dict:
         run = r.run()
     except Exception as e:  # one broken file must not hide the others
         return {"id": run_id, "error": str(e)}
-    return {"id": run_id, "kind": run["kind"], "target": run["target"], "outcome": run["outcome"],
+    return {"id": run_id, "kind": run["kind"], "target": run["target"], "args": run["argv"][1:], "outcome": run["outcome"],
             "exit_code": run["exit_code"], "started": run["started_wall"],
             "duration_ns": run["ended_ns"] - run["started_ns"] if run["ended_ns"] else None,
             "calls": r.counts()["call"], "truncated": run["truncated"], "level": run["config"].get("level")}
