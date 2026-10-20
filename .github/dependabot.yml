@@ -28,7 +28,13 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    # Packages that must move together (peer dependencies) share a group for every update type, majors included;
+    # proposed one by one they can never pass CI. The first matching group wins.
     groups:
+      vite:
+        patterns: ["vite", "@vitejs/*"]
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
       frontend:
         patterns: ["*"]
         update-types: [minor, patch]
