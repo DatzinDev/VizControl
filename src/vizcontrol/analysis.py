@@ -236,10 +236,16 @@ class Stager:
         return head
 
 
+def _last_end(reader: Reader, rows: list[tuple]) -> int:
+    """When calls still open as tracing stopped (max_calls, a killed process) ended at the latest: the run's end."""
+    return reader.run()["ended_ns"] or max((r[3] for r in rows if r[3] is not None), default=0)
+
+
 def stages(reader: Reader, heads: frozenset | None = None, depth: int | None = None) -> dict:
     """Stage graph for the Level-1 overview (FR-ANA-2). One pass over all calls."""
     rows = reader.all_calls()
     stage_by_call = Stager(reader, heads, depth).assign(rows)
+    last = _last_end(reader, rows)
     dur: dict[int, int] = {}
     child_dur: dict[int, int] = defaultdict(int)
     nodes: dict[str, dict] = {}
@@ -248,7 +254,7 @@ def stages(reader: Reader, heads: frozenset | None = None, depth: int | None = N
     inside: dict[int, frozenset] = {}  # call -> stages open on its path, so a re-entered stage counts its time once
     for cid, parent, start, end, outcome, seq, module, observed, kind, _ in rows:
         stage = stage_by_call[cid]
-        d = dur[cid] = end - start if end is not None else 0
+        d = dur[cid] = (end if end is not None else max(last, start)) - start
         n = nodes.get(stage)
         if n is None:
             n = nodes[stage] = {"name": stage, "calls": 0, "total_ns": 0, "self_ns": 0, "raised": 0,
@@ -392,6 +398,8 @@ def stage_detail(reader: Reader, stage: str, heads: frozenset | None = None, dep
     codes = {c["id"]: c for c in reader.codes()}
     rows = reader.all_calls()
     stage_by_call = Stager(reader, heads, depth).assign(rows)
+    last = _last_end(reader, rows)
+    inside: dict[int, bool] = {}  # call -> the stage is open on its path: its time is counted once, where entered
     code_by_call: dict[int, int] = {}
     dur: dict[int, int] = {}
     child_dur: dict[int, int] = defaultdict(int)
@@ -403,7 +411,8 @@ def stage_detail(reader: Reader, stage: str, heads: frozenset | None = None, dep
     for cid, parent, start, end, outcome, seq, module, observed, kind, code_id in rows:
         s = stage_by_call[cid]
         code_by_call[cid] = code_id
-        d = dur[cid] = end - start if end is not None else 0
+        inside[cid] = s == stage or inside.get(parent, False)
+        d = dur[cid] = (end if end is not None else max(last, start)) - start
         if parent is not None:
             child_dur[parent] += d
         pstage = stage_by_call.get(parent)
@@ -417,13 +426,14 @@ def stage_detail(reader: Reader, stage: str, heads: frozenset | None = None, dep
                     "file": c["relpath"] or c["path"], "kind": kind, "observed": bool(observed), "calls": 0,
                     "total_ns": 0, "self_ns": 0, "raised": 0, "unfinished": 0, "first_call": cid, "first_seq": seq}
             f["calls"] += 1
-            f["total_ns"] += d
+            if parent is None or code_by_call[parent] != code_id:  # ponytail: direct recursion only, not a->b->a
+                f["total_ns"] += d
             f["raised"] += outcome == "raised"
             f["unfinished"] += outcome == "unfinished"
             if pstage == stage:
                 internal[(code_by_call[parent], code_id)] += 1
             else:
-                total += d
+                total += 0 if inside.get(parent) else d
                 incoming[(pstage, parent and code_by_call[parent], code_id)] += 1
         elif pstage == stage:
             outgoing[(code_by_call[parent], s)] += 1
