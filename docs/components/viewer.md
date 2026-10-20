@@ -18,7 +18,7 @@ lays out, renders and navigates. Visual concept: [UI design](../ui-design.md).
 | Level 3 call tree: lazy expansion, `×N` groups with paged members, opaque/unfinished/raised states | Diff: synced selection between the two sides |
 | Diff (S7): pick run B (same target first), common path paired with `=`, the split in a dashed block, inspector with summary, first divergence, argument diff and the branch source; a card opens its call in its run | |
 | Failure mode: opens on the origin, red error path, off-path dimming, exception/locals/last-changes/traceback/source. In context: "stopped here" on the stage (Level 1) and function (Level 2), the stages a reference run reached in grey, a "Stopped here" card and a compare link | Filters on the stage graph and Level 2 (they apply to the call tree) |
-| Filters: stage checkboxes, minimum duration, library leaves. Filtered calls and what is expanded under them fold into one "hidden (N)" stub per parent; the selection and the error path always show | |
+| Filters: stage checkboxes, minimum duration, library leaves. Standard library stages (`json`, `re`, `functools`...) are off the overview and the map unless they raised or "Show standard library stages" is on; third-party libraries stay. Filtered calls and what is expanded under them fold into one "hidden (N)" stub per parent; the selection and the error path always show | |
 | Level 4 value tree, object history and field-level changes | Provenance marks beyond groups, stages, flow and changes |
 | Source: excerpt in the inspector, and "View file" opens the whole file with the call or raise line in view (Esc closes it) | |
 | ✂ on calls cut by a limit (at `max_depth` when `limit_depth` was hit, or where `max_calls` stopped), with the reason in the inspector | |

@@ -52,6 +52,7 @@ export function App() {
   const [searching, setSearching] = useState(false);
   const [focusError, setFocusError] = useState(true);
   const [hideOpaque, setHideOpaque] = useState(false);
+  const [showStdlib, setShowStdlib] = useState(false);
   const [hiddenStages, setHiddenStages] = useState<Set<string>>(new Set());
   const [minMs, setMinMs] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
@@ -358,7 +359,7 @@ export function App() {
           {stages && (
             <>
               <div className="label" style={{ marginTop: 8 }}>Stages</div>
-              {stages.nodes.map((s) => (
+              {stages.nodes.filter((s) => showStdlib || !s.stdlib || s.raised).map((s) => (
                 <div key={s.name} className="stage-row">
                   <input type="checkbox" checked={!hiddenStages.has(s.name)} onChange={() => toggleStage(s.name)}
                     title="Show this stage's calls in the call tree" aria-label={`Show ${s.name} calls`} />
@@ -376,6 +377,7 @@ export function App() {
             <label className="toggle"><input type="checkbox" checked={focusError} onChange={(e) => setFocusError(e.target.checked)} />Dim calls off the error path</label>
           )}
           <label className="toggle"><input type="checkbox" checked={hideOpaque} onChange={(e) => setHideOpaque(e.target.checked)} />Hide library calls without callbacks</label>
+          <label className="toggle"><input type="checkbox" checked={showStdlib} onChange={(e) => setShowStdlib(e.target.checked)} />Show standard library stages</label>
           <label className="toggle">
             Min duration
             <select value={minMs} onChange={(e) => setMinMs(Number(e.target.value))}>
@@ -398,6 +400,7 @@ export function App() {
                 graph={stages}
                 stopped={error?.origin.stage ?? undefined}
                 ghosts={ghosts}
+                showStdlib={showStdlib}
                 selected={selection?.kind === "stage" ? selection.name : null}
                 onSelect={(name) => { setSelection({ kind: "stage", name }); setValue(null); }}
                 onOpen={(name) => (refRun && ghosts?.nodes.some((n) => n.name === name) ? openFromMap(refRun.id, name) : showStage(name))}
@@ -410,6 +413,7 @@ export function App() {
                 <div className="hint">Every run on one map · the selected run's route in accent · double-click a stage to open it</div>
                 <StageView
                   graph={routeMap}
+                  showStdlib={showStdlib}
                   route={routeMap.routes.find((r) => r.run === runId)}
                   selected={selection?.kind === "stage" ? selection.name : null}
                   onSelect={(name) => setSelection({ kind: "stage", name })}
