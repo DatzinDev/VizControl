@@ -146,6 +146,22 @@ await check("clicking a step opens its call", async () => {
   expect((await text(".inspector .title-lg")) === "compute", `inspector shows ${await text(".inspector .title-lg")}`);
 });
 
+await check("Diff compares two runs and explains where they split", async () => {
+  await page.goto(`${base}#run=basic.vizc`, { waitUntil: "networkidle0" });
+  await page.reload({ waitUntil: "networkidle0" });
+  await wait(800);
+  await page.$$eval(".tabs button", (bs) => bs.find((b) => b.textContent === "Diff").click());
+  await wait(500);
+  await page.$$eval(".picker .binding", (bs) => bs.find((b) => b.textContent.includes("vip")).click());
+  await wait(1200);
+  expect((await text(".diff-badge")).includes("compute"), `badge: ${await text(".diff-badge")}`);
+  expect((await text(".inspector")).includes("order.customer.tier 'basic' → 'vip'"), "argument diff missing");
+  await page.$$eval(".diff-split .diff-card", (cs) => cs.find((c) => c.textContent.includes("load_vip_rules")).click());
+  await wait(1500);
+  expect((await text(".inspector .title-lg")) === "load_vip_rules", `inspector shows ${await text(".inspector .title-lg")}`);
+  expect((await text(".chip.outline")).includes("vip"), "did not switch to run B");
+});
+
 await check("no uncaught page errors", async () => expect(!errors.length, errors.join("; ")));
 await browser.close();
 process.exit(failures ? 1 : 0);
