@@ -179,10 +179,15 @@ their own flushes or at stop.
 | Workload | `calls` | `values` | `state` |
 |---|---|---|---|
 | app-like (traced code orchestrating json/re/sorting) | ≈1.0× | ≈1.0× | ≈1.1× |
-| worst case (87k tiny traced functions) | 4.6 µs/call (≈60×) | 27 µs/call | 42 µs/call |
+| worst case (87k tiny traced functions) | 4.2 µs/call (≈60×) | 4.4 µs/call | 4.4 µs/call |
 
-The worst case is pure per-call bookkeeping in Python. A C accelerator for the hot callbacks is the upgrade path
-if it matters.
+The worst case is pure per-call bookkeeping in Python: its few functions are called thousands of times, so past
+their first 100 calls (`values.max_per_function`) they record no values. A C accelerator for the hot callbacks is
+the upgrade path if it matters.
+
+On real projects (Python 3.13): `black` formatting a 1,800-line file, about 1M calls, takes 15 s traced instead of
+0.5 s and writes a 220 MB file; `rich` rendering a README, 110k calls, 4.5 s instead of 0.2 s and 37 MB; the Flask
+tutorial's 24 tests, 1.1 s instead of 1.0 s.
 
 At scale (a 250k-iteration loop of tiny functions, `values` level): 893k calls and 2.3M bindings in 17.7 s (the
 program alone takes 0.3 s), 33 MB of memory, a 381 MB `.vizc` file.
