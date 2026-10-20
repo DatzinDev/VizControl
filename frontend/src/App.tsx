@@ -28,6 +28,7 @@ export function App() {
   const pending = useRef<ReturnType<typeof readHash> | null>(initial);  // what the URL asks for, once its run has loaded
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [runId, setRunId] = useState<string | null>(initial.run);
+  const [loadedRun, setLoadedRun] = useState<string | null>(null);  // the URL follows the state only once a run has loaded
   const [view, setView] = useState<View>("stages");
   const [stages, setStages] = useState<StageGraph | null>(null);
   const [error, setError] = useState<ErrorPath | null | undefined>(undefined);
@@ -142,6 +143,7 @@ export function App() {
       if (!live) return;
       setStages(g);
       setError(err);
+      setLoadedRun(runId);
       applyPending(err);
     }).catch((e) => setProblem(String(e)));
     return () => {
@@ -150,13 +152,15 @@ export function App() {
   }, [runId]);
 
   useEffect(() => {
+    // while a run loads, the state still describes the previous one: writing it would mix the two in the URL
+    if (loadedRun !== runId) return;
     const p = new URLSearchParams();
     if (runId) p.set("run", runId);
     if (view === "flow") p.set(followed != null ? "obj" : "view", followed != null ? String(followed) : "flow");
     else if (view === "stage" && openStage) p.set("stage", openStage);
     else if (selection?.kind === "call") p.set("call", String(selection.id));
     history.replaceState(null, "", `#${p}`);
-  }, [runId, selection, view, followed, openStage]);
+  }, [runId, loadedRun, selection, view, followed, openStage]);
 
   useEffect(() => {
     const onPop = () => {
