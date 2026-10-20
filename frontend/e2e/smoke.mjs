@@ -142,6 +142,8 @@ await check("Data Flow follows an object, nested appearances included", async ()
   expect((await text(".level")) === "Data Flow", `level is ${await text(".level")}`);
   expect((await page.$$(".step")).length >= 5, "fewer than 5 steps for the order");
   expect((await text(".inspector")).includes("'draft' → 'paid'"), "status change missing");
+  const made = await page.$$eval(".inspector .section", (ss) => ss.find((s) => s.textContent.startsWith("Made from"))?.textContent ?? "");
+  expect(made.includes("customer") && made.includes("items") && !made.includes("self"), `made from: ${made}`);
   await page.$$eval(".inspector .binding", (bs) => bs.find((b) => b.textContent.includes("customer")).click());
   await wait(1000);
   const heads = await page.$$eval(".step .head", (hs) => hs.map((h) => h.textContent));

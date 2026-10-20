@@ -82,8 +82,9 @@ click goes up one level.
   canvas shows each appearance as a step, left → right in `seq` order, one lane per module. A step shows its role,
   the call, the object's fields and Δ on the fields that changed since the previous step; a step where the object
   sits inside another value says so (`in order.customer`). Clicking a step opens its call in Execution Flow, and the
-  Data Flow tab goes back to the object. The inspector shows the lifecycle, the changes, other objects in the run
-  and the provenance note. The canvas starts at a readable zoom from the first step instead of fitting a long flow.
+  Data Flow tab goes back to the object. The inspector shows the lifecycle, the changes, what the data was made
+  from and what it became (inferred hops to follow past a function that builds a new object), other objects in the
+  run and the provenance note. The canvas starts at a readable zoom from the first step instead of fitting a long flow.
 - **Diff** (FR-VIZ-11): the current run (A) and a picked run (B) side by side: the common path to where they split,
   each side's calls there, and why (argument diff, branch source). The URL keeps `vs`. A card opens its call in its
   run; Back returns to the diff.

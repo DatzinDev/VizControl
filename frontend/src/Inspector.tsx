@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, Binding, CallDetail, Change, Enc, ErrorPath, ObjectFlow, ObjectSummary, RunSummary, Source, StageDetail, StageNode, Value } from "./api";
+import { api, Binding, CallDetail, Change, Enc, ErrorPath, Hop, ObjectFlow, ObjectSummary, RunSummary, Source, StageDetail, StageNode, Value } from "./api";
 import { fnLabel } from "./ComponentView";
 import { changeText, ms, outcomeIcon, runLabel, shortName } from "./format";
 
@@ -420,6 +420,27 @@ export function ValueInspector(props: { run: string; binding: Binding; onBack: (
 
 // -- data flow ----------------------------------------------------------------------------------------------------
 
+/** The data before or after the followed object, one call away: what it was made from, what it became. */
+function Hops({ title, verb, hops, onOpenCall, onFollow }: {
+  title: string; verb: string; hops: Hop[]; onOpenCall: (id: number) => void; onFollow: (oid: number) => void;
+}) {
+  if (!hops.length) return null;
+  return (
+    <Section title={`${title} · inferred`}>
+      {hops.slice(0, 8).map((h) => (
+        <div key={`${h.call_id}-${h.object_id}`} className="hop">
+          <button className="binding" disabled={h.object_id == null} onClick={() => h.object_id != null && onFollow(h.object_id)}
+            title={h.object_id != null ? "Follow this object" : "A value without identity: nothing to follow"}>
+            <span className="k">{h.name ?? shortName(h.type)}</span>
+            <span className="v">{h.object_id != null && <span className="oid">#{h.object_id}</span>} {h.preview}</span>
+          </button>
+          <button className="link muted" onClick={() => onOpenCall(h.call_id)}>{verb} {shortName(h.qualname)}</button>
+        </div>
+      ))}
+    </Section>
+  );
+}
+
 export function ObjectInspector(props: { run: string; flow: ObjectFlow; onOpenCall: (id: number) => void; onFollow: (oid: number) => void }) {
   const { run, flow, onOpenCall, onFollow } = props;
   const others = useLoad<ObjectSummary[]>(() => api.objects(run), [run]);
@@ -453,6 +474,8 @@ export function ObjectInspector(props: { run: string; flow: ObjectFlow; onOpenCa
           <ChangeList changes={flow.changes} onOpenCall={onOpenCall} />
         </Section>
       )}
+      <Hops title="Made from" verb="passed to" hops={flow.made_from} onOpenCall={onOpenCall} onFollow={onFollow} />
+      <Hops title="Became" verb="returned by" hops={flow.became} onOpenCall={onOpenCall} onFollow={onFollow} />
       {others && others.length > 1 && (
         <Section title="Other objects in this run">
           {others.filter((o) => o.object_id !== flow.object_id).slice(0, 8).map((o) => (
