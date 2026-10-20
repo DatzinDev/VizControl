@@ -6,6 +6,7 @@ See docs/components/analysis.md.
 
 from __future__ import annotations
 
+import bisect
 import difflib
 import fnmatch
 import json
@@ -779,3 +780,67 @@ def search(reader: Reader, text: str, limit: int = 100) -> list[dict]:
             hits.append({"kind": kind[:-1], "label": v["name"] or v["kind"], "call_id": v["call_id"],
                          "role": v["kind"], "preview": preview(json.loads(v["data"]))})
     return hits[:limit]
+
+
+# -- replay: the run as a recording ------------------------------------------------------------------------------
+
+class Timeline:
+    """Every call's start and end in time order: the steps of a replay. Built once per run and paged.
+    ponytail: three ints per step in memory; a run of millions of calls costs ~100 MB here, page from SQL if needed."""
+
+    def __init__(self, reader: Reader):
+        steps = []
+        for cid, start, end, outcome in reader.call_events():
+            steps.append((start, 0, cid))
+            if end is not None:  # an unfinished call never ends
+                steps.append((end, 2 if outcome == "raised" else 1, cid))
+        steps.sort()
+        self.steps = steps
+        self.raises = [i for i, s in enumerate(steps) if s[1] == 2]
+
+    def index_at(self, seq: int) -> int:
+        """The first step at or after `seq`."""
+        return bisect.bisect_left(self.steps, (seq,))
+
+    def page(self, reader: Reader, offset: int, limit: int) -> dict:
+        window = self.steps[offset:offset + limit]
+        ids = sorted({cid for _, _, cid in window})
+        calls = {c["id"]: c for c in reader.calls(ids)}
+        values: dict[tuple, list] = defaultdict(list)  # (call, seq) -> bindings made at that step
+        raised: dict[int, list] = defaultdict(list)  # call -> locals where its exception was raised
+        for b in reader.bindings_of(ids):
+            v = {"name": b["name"], "kind": b["kind"], "preview": preview(json.loads(b["data"])),
+                 "object_id": b["object_id"], "value_id": b["value_id"], "type": b["type"]}
+            (raised[b["call_id"]] if b["kind"] == "raise" else values[(b["call_id"], b["seq"])]).append(v)
+        out = []
+        for i, (seq, kind, cid) in enumerate(window, offset):
+            c = calls[cid]
+            step = {"i": i, "seq": seq, "kind": ("call", "return", "raise")[kind], "call_id": cid,
+                    "parent_id": c["parent_id"], "depth": c["depth"], "code_id": c["code_id"],
+                    "qualname": c["qualname"], "module": c["module"], "observed": bool(c["observed"]),
+                    "line": c["call_line"], "file": c["relpath"] or c["path"], "first_line": c["first_line"],
+                    "values": values.get((cid, seq), [])}
+            if kind == 2:
+                exc = reader.exception(c["exception_id"]) if c["exception_id"] else None
+                step["exception"] = exc and {"type": exc["type"], "message": exc["message"],
+                                             "origin": exc["raised_call_id"] == cid, "line": exc["raised_line"]}
+                step["values"] = raised.get(cid, [])
+            out.append(step)
+        return {"total": len(self.steps), "offset": offset, "steps": out, "raises": self.raises}
+
+
+def call_graph(reader: Reader) -> dict:
+    """Functions as nodes, "A called B" as edges, each with when it first happened (seq): a replay reveals them in
+    that order."""
+    nodes, edges = reader.code_graph()
+    for n in nodes:
+        n["observed"] = bool(n["observed"])
+    return {"nodes": nodes, "edges": edges}
+
+
+def watch(reader: Reader, name: str, limit: int = 5000) -> list[dict]:
+    """Every value a variable called `name` had, anywhere in the run, in time order: a watch at any step is the
+    last one at or before it."""
+    return [{"seq": b["seq"], "call_id": b["call_id"], "qualname": b["qualname"], "kind": b["kind"],
+             "preview": preview(json.loads(b["data"])), "object_id": b["object_id"], "value_id": b["value_id"],
+             "type": b["type"]} for b in reader.named_bindings(name, limit)]
