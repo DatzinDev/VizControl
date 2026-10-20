@@ -193,7 +193,9 @@ the upgrade path if it matters.
 
 On real projects (Python 3.13): `black` formatting a 1,800-line file, about 1M calls, takes 15 s traced instead of
 0.5 s and writes a 220 MB file; `rich` rendering a README, 110k calls, 4.5 s instead of 0.2 s and 37 MB; the Flask
-tutorial's 24 tests, 1.1 s instead of 1.0 s.
+tutorial's 24 tests, 1.1 s instead of 1.0 s; `more-itertools`' 765 tests, 127 s instead of 8 s and 675 MB of runs.
+Generator-heavy code costs the most: every `yield` and resume of a traced generator runs a callback (about 1 µs),
+even past its values cap, and one test there yields 8 million times.
 
 At scale (a 250k-iteration loop of tiny functions, `values` level): 893k calls and 2.3M bindings in 17.7 s (the
 program alone takes 0.3 s), 33 MB of memory, a 381 MB `.vizc` file.
