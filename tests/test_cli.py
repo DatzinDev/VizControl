@@ -46,3 +46,8 @@ def test_run_serve_opens_the_new_run(tmp_path, monkeypatch):
     (tmp_path / "boom.py").write_text("raise SystemExit(3)\n")
     assert main(["run", "--serve", "-o", "runs/b.vizc", "boom.py"]) == 3  # the program's exit code
     assert served == [(Path("runs"), {"run": "b.vizc"})]
+
+
+def test_serve_without_runs_says_how_to_make_one(tmp_path):
+    proc = vizcontrol(tmp_path, "serve", "--no-browser")
+    assert proc.returncode == 1 and "no runs yet" in proc.stderr and "vizcontrol run" in proc.stderr

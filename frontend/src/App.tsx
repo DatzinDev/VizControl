@@ -33,6 +33,7 @@ export function App() {
   const initial = useMemo(readHash, []);
   const pending = useRef<Wanted | null>(initial);  // what the URL asks for, once its run has loaded
   const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [runsLoaded, setRunsLoaded] = useState(false);
   const [runId, setRunId] = useState<string | null>(initial.run);
   const [loadedRun, setLoadedRun] = useState<string | null>(null);  // the URL follows the state only once a run has loaded
   const [view, setView] = useState<View>("stages");
@@ -62,6 +63,7 @@ export function App() {
   useEffect(() => {
     api.runs().then((list) => {
       setRuns(list);
+      setRunsLoaded(true);
       if (!runId && list.length) setRunId(list[list.length - 1].id);
     }).catch((e) => setProblem(String(e)));
   }, []);
@@ -392,6 +394,16 @@ export function App() {
 
         <section className="canvas">
           {problem && <div className="empty raised">{problem}</div>}
+          {!problem && runsLoaded && !runs.length && (
+            <div className="empty">
+              <div className="first-run">
+                <div className="title-lg">No runs here yet</div>
+                <p className="muted">Trace your program, then reload this page:</p>
+                <pre className="mono">{"vizcontrol run app.py           # a script\nvizcontrol run -m package.cli   # a module\npytest --vizcontrol             # one run per test"}</pre>
+                <p className="muted">Runs are written to <span className="mono">.vizcontrol/runs</span> of the directory you run them from.</p>
+              </div>
+            </div>
+          )}
           {!problem && view === "stages" && stages && (
             <>
               <div className="hint">
