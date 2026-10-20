@@ -55,7 +55,7 @@ class Rec:
     The row is written once, when the call ends, unless a flush happens while it is open (`written`)."""
 
     __slots__ = ("id", "frame", "depth", "opaque", "parent_id", "tid", "code_id", "line", "seq", "start",
-                 "children", "written", "callable", "expect")
+                 "children", "written", "callable", "expect", "valued")
 
     def __init__(self, id, frame, depth, opaque, parent_id, tid, code_id, line, seq, start):
         self.id, self.frame, self.depth, self.opaque, self.parent_id = id, frame, depth, opaque, parent_id
@@ -64,6 +64,7 @@ class Rec:
         self.written = False
         self.callable = None
         self.expect = ()
+        self.valued = True  # its values are recorded (see Values.max_per_function)
 
 
 class ExcEntry:
@@ -127,6 +128,10 @@ class Tracer:
         self.max_depth = config.limits.max_depth
         self.max_calls = config.limits.max_calls
         self.max_items = config.values.max_items
+        self.max_per_function = config.values.max_per_function
+        self._per_function: dict[int, int] = {}  # code id -> calls so far
+        self._stored: dict[tuple, int] = {}  # encoded value -> its row: a value seen again is not stored again
+        self._stored_bytes = 0
         self.flush_every = flush_every
         self._roots = tuple(os.path.abspath(r) + os.sep for r in roots)
         self._excluded = _excluded_prefixes()
@@ -344,12 +349,19 @@ class Tracer:
         if not self.values:
             return
         e = self.enc.encode(obj, name)
-        self.value_bytes += len(e.data)
-        if self.value_bytes > self.cfg.limits.max_values_bytes:
-            self.values = self.state = False  # degrade to 'calls' level
-            self._gap(call_id, "limit_values", f"{self.value_bytes} bytes")
-        vid = self.w.new_id("value")
-        self.w.add("value", (vid, e.object_id, e.type, e.data, int(e.truncated), int(e.redacted)))
+        key = (e.object_id, e.type, e.data, e.truncated, e.redacted)
+        vid = self._stored.get(key)
+        if vid is None:
+            self.value_bytes += len(e.data)
+            if self.value_bytes > self.cfg.limits.max_values_bytes:
+                self.values = self.state = False  # degrade to 'calls' level
+                self._gap(call_id, "limit_values", f"{self.value_bytes} bytes")
+            vid = self._stored[key] = self.w.new_id("value")
+            self.w.add("value", (vid, e.object_id, e.type, e.data, int(e.truncated), int(e.redacted)))
+            self._stored_bytes += len(e.data)
+            if self._stored_bytes > 32 * 1024 * 1024:  # ponytail: forget all at once; an LRU if it ever matters
+                self._stored.clear()
+                self._stored_bytes = 0
         self.w.add("binding", (call_id, seq, kind, name, line, vid))
 
     def _bind_locals(self, call_id: int, frame, seq: int, kind: str) -> None:
@@ -416,6 +428,12 @@ class Tracer:
             stack.append(rec)
             CALLER.set((rec.id, depth, self))
             if self.values:
+                seen = self._per_function[cid] = self._per_function.get(cid, 0) + 1
+                if seen > self.max_per_function:  # a hot function: its first calls show what its values look like
+                    rec.valued = False
+                    if seen == self.max_per_function + 1:
+                        self._gap(rec.id, "limit_values_per_function", code.co_qualname)
+            if self.values and rec.valued:
                 n = code.co_argcount + code.co_kwonlyargcount
                 n += bool(code.co_flags & CO_VARARGS) + bool(code.co_flags & CO_VARKEYWORDS)
                 if n:
@@ -449,7 +467,7 @@ class Tracer:
                 return
             CALLER.set((rec.parent_id, rec.depth - 1, self) if rec.parent_id is not None else None)
             now, seq = _now(), self._seq()
-            if self.values:
+            if self.values and rec.valued:
                 self._bind(rec.id, seq, "return", None, frame.f_lineno, retval)
                 if self.state:
                     self._bind_locals(rec.id, frame, seq, "local")
@@ -572,7 +590,7 @@ class Tracer:
             self._suspended[fid] = rec  # stays open; PY_RESUME pushes it back
             top = stack[-1] if stack else None  # back in the code that consumed it (or the event loop)
             CALLER.set((top.id, top.depth, self) if top is not None and top.id is not None else None)
-            if rec.id is not None and self.values:
+            if rec.id is not None and self.values and rec.valued:
                 self._bind(rec.id, self._seq(), "yield", None, frame.f_lineno, value)
         except Exception as e:
             self._fail(e)
@@ -590,7 +608,7 @@ class Tracer:
                 return
             CALLER.set((rec.parent_id, rec.depth - 1, self) if rec.parent_id is not None else None)
             now, seq = _now(), self._seq()
-            if self.state:
+            if self.state and rec.valued:
                 self._bind_locals(rec.id, frame, seq, "local")
             entry = self._exc.get(id(exc))
             self._end(rec, seq, now, "raised", entry.id if entry and entry.obj is exc else None, 1)
