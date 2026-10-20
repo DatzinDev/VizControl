@@ -1,5 +1,5 @@
 import { Background, Controls, Edge, Handle, MarkerType, Node, NodeProps, Position, ReactFlow, useReactFlow } from "@xyflow/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api, Binding, CallGraph, CallNode, Step, StepValue, Watched } from "./api";
 import { shortName } from "./format";
 import { ValueInspector } from "./Inspector";
@@ -19,10 +19,16 @@ const handles = (
   </>
 );
 
+/** Each function's state at the current step. Read from context so that the node objects handed to React Flow stay
+ * the same between steps: new node objects make it re-adopt them and drop every edge for a frame (the arrows
+ * flickered away while playing). */
+const StepState = createContext<(codeId: number) => FnState>(() => "future");
+
 function FnNode({ data }: NodeProps) {
-  const d = data as { label: string; calls: number; state: FnState; observed: boolean };
+  const d = data as { codeId: number; label: string; calls: number; observed: boolean };
+  const state = useContext(StepState)(d.codeId);
   return (
-    <div className={`fn ${d.state} ${d.observed ? "" : "lib"}`} title={d.label}>
+    <div className={`fn ${state} ${d.observed ? "" : "lib"}`} title={d.label}>
       {handles}
       <span className="q">{shortName(d.label)}</span>
       <span className="count">{d.calls > 1 ? `×${d.calls}` : ""}</span>
@@ -185,17 +191,23 @@ export function ReplayView(props: { runId: string; endOf?: number; onFollow: (oi
   });
 
   const stackCodes = useMemo(() => stack.map((c) => c.code_id), [stack]);
-  const flow = useMemo(() => {
-    if (!graph || !positions || !cur) return { nodes: [] as Node[], edges: [] as Edge[] };
+  const shown = useRef<Step | undefined>(undefined);  // the last step drawn: kept while the next page loads
+  if (cur) shown.current = cur;
+  const now = shown.current;
+  const nodes = useMemo<Node[]>(() => (!graph || !positions ? [] : graph.nodes.map((n) => ({
+    id: `c${n.code_id}`, type: "fn", position: positions.get(`c${n.code_id}`) ?? { x: 0, y: 0 }, width: FN_W, height: FN_H,
+    data: { codeId: n.code_id, label: n.qualname, calls: n.calls, observed: n.observed } }))), [graph, positions]);
+  const stateOf = useMemo(() => {
     const onStack = new Set(stackCodes);
+    const first = new Map(graph?.nodes.map((n) => [n.code_id, n.first_seq]));
+    return (code: number): FnState => !now ? "future" : code === now.code_id ? (now.kind === "raise" ? "failed" : "current")
+      : onStack.has(code) ? "stack" : (first.get(code) ?? Infinity) <= now.seq ? "seen" : "future";
+  }, [now, stackCodes, graph]);
+  const edges = useMemo(() => {
+    if (!graph || !now) return [] as Edge[];
+    const cur = now;
     const active = new Set(stackCodes.slice(1).map((c, i) => `${stackCodes[i]}>${c}`));
-    const nodes: Node[] = graph.nodes.map((n) => {
-      const state: FnState = n.code_id === cur.code_id ? (cur.kind === "raise" ? "failed" : "current")
-        : onStack.has(n.code_id) ? "stack" : n.first_seq <= cur.seq ? "seen" : "future";
-      return { id: `c${n.code_id}`, type: "fn", position: positions.get(`c${n.code_id}`) ?? { x: 0, y: 0 },
-        width: FN_W, height: FN_H, data: { label: n.qualname, calls: n.calls, state, observed: n.observed } };
-    });
-    const edges: Edge[] = graph.edges.map((e) => {
+    return graph.edges.map((e): Edge => {
       const id = `${e.source}>${e.target}`;
       const live = active.has(id);
       const seen = e.first_seq <= cur.seq;
@@ -205,8 +217,7 @@ export function ReplayView(props: { runId: string; endOf?: number; onFollow: (oi
         style: { stroke: color, strokeWidth: live ? 2.5 : 1, opacity: seen ? 1 : 0.35 },
         markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 } };
     });
-    return { nodes, edges };
-  }, [graph, positions, cur, stackCodes]);
+  }, [graph, now, stackCodes]);
 
   if (pos == null || !graph) return <div className="empty">Loading the recording…</div>;
   if (!total) return <div className="empty">Nothing was traced in this run.</div>;
@@ -227,7 +238,8 @@ export function ReplayView(props: { runId: string; endOf?: number; onFollow: (oi
       <div className="replay-stage">
         <div className="replay-graph">
           {positions && (
-            <ReactFlow nodes={flow.nodes} edges={flow.edges} nodeTypes={nodeTypes} key={runId}
+            <StepState.Provider value={stateOf}>
+            <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} key={runId}
               onNodeClick={(_, n) => {
                 const g = graph.nodes.find((x) => `c${x.code_id}` === n.id);
                 if (g) jumpToSeq(g.first_seq);
@@ -236,8 +248,9 @@ export function ReplayView(props: { runId: string; endOf?: number; onFollow: (oi
               fitViewOptions={{ padding: 0.15, maxZoom: 1.2 }} minZoom={0.1} proOptions={{ hideAttribution: true }}>
               <Background gap={24} size={1} color="var(--border)" />
               <Controls showInteractive={false} position="bottom-right" />
-              <FollowCurrent at={cur && positions.get(`c${cur.code_id}`)} big={graph.nodes.length > 30} />
+              <FollowCurrent at={now && positions.get(`c${now.code_id}`)} big={graph.nodes.length > 30} />
             </ReactFlow>
+            </StepState.Provider>
           )}
           <div className="replay-legend">click a function to jump to its first call · ← → step · space play</div>
         </div>
