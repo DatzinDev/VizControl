@@ -34,8 +34,8 @@ The encoder walks the object breadth-limited and depth-limited and **never calls
 | `str`, `bytes`, `bytearray` | Sliced to `max_str` chars/bytes; original length kept. |
 | `list`, `tuple`, `set`, `frozenset`, `dict` (and subclasses) | Through the **base type's** methods (`list.__iter__`, `dict.items`), never the subclass overrides. At most `max_items` entries. |
 | Allowlisted stdlib types (`datetime`, `date`, `Decimal`, `UUID`, `Path`, `Enum`, `re.Pattern`, ...) | Their `repr` (known to be side-effect-free). |
-| User-registered types | The registered function, run under the re-entrancy guard; an exception produces `opaque`. |
-| Other objects | Attributes from `object.__getattribute__(obj, "__dict__")` plus `__slots__` read through the member descriptors. Properties, `__getattr__` and `__repr__` are never triggered. |
+| Types with a serializer | Through the type's MRO, first match: a `__vizcontrol__()` method on the class, `register(type, fn)`, the config's `serializers`, then the built-in views. The result is encoded like any value (bounded, redacted) and marked `view`: a dict becomes the object's fields and keeps its oid, so it can be followed and diffed; anything else stands for its value. A view adds no nesting level. It runs inside the monitoring callback, where CPython reports no events, so it is never traced; an exception produces `opaque`. |
+| Other objects | Attributes from `object.__getattribute__(obj, "__dict__")` plus `__slots__` read through the member descriptors, except dunder slots (`__pydantic_fields_set__` and similar machinery). Properties, `__getattr__` and `__repr__` are never triggered. Dataclasses and pydantic models come out as their fields this way. |
 | Iterators, generators, files, sockets, locks, modules, functions, classes | `opaque` with type and, where cheap and safe, a label (function qualname, module name, file name). Never consumed. |
 
 Limits: `max_depth` (default 3), `max_items` (default 20), `max_str` (default 200), `max_nodes` (default 100
@@ -80,8 +80,10 @@ Redaction can be strengthened but not disabled by flags. Clearing the default ru
 
 ## Limits and failure modes
 
-- Objects whose state lives in C (numpy arrays, DB connections) are `opaque` unless a serializer is registered.
-  Shipping optional serializers for popular libraries is roadmap.
+- Built-in views, found by type name so nothing is imported: pandas `DataFrame` (shape, column dtypes, first 5 rows),
+  `Series`, `Timestamp`, numpy `ndarray` (shape, dtype, first 5 per axis) and scalars (their Python value). They call
+  the library's read-only methods (`head`, `dtypes`, `tolist`), unlike the plain object walk.
+- Other objects whose state lives in C (DB connections, sockets) are `opaque` unless a serializer is registered.
 - Reading `__dict__` of objects mutated concurrently by another thread may see a torn state. This is accepted
   and documented.
 - Encoding cost grows with `max_items × max_depth`. The defaults are tuned with the benchmark suite.
