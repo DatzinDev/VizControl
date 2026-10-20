@@ -80,6 +80,14 @@ def test_script_sees_what_python_would_show(tmp_path):
     assert proc.stdout.strip() == str(tmp_path / "where.py")  # absolute, as with `python where.py`
 
 
+def test_code_without_a_module_is_named_after_its_path(tmp_path):
+    (tmp_path / "render.py").write_text(
+        "import pathlib\npage = str(pathlib.Path(__file__).parent / 'templates' / 'page.html')\n"
+        "exec(compile('def root():\\n    return 1\\nroot()', page, 'exec'), {})\n")
+    subprocess.run([sys.executable, "-m", "vizcontrol", "run", "-o", "r.vizc", "render.py"], cwd=tmp_path, timeout=60)
+    assert {c["module"] for c in Reader(tmp_path / "r.vizc").codes() if c["qualname"] == "root"} == {"templates.page"}
+
+
 def test_script_failure(tmp_path):
     proc, r = run_cli(tmp_path, "checkout.py", "vip")
     assert proc.returncode == 1
