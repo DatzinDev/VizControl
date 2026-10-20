@@ -300,6 +300,18 @@ def test_a_project_of_many_modules_is_staged_by_package(tmp_path, monkeypatch):
     assert "big.m12" in [n["name"] for n in A.stages(Reader(t.path))["nodes"]]  # a configured depth wins
 
 
+def test_a_stage_opens_even_with_calls_whose_parent_was_never_written(tmp_path):
+    with vizcontrol.trace(output=tmp_path / "o.vizc") as t:
+        main()
+    import sqlite3
+
+    with sqlite3.connect(t.path) as db:  # as files from 0.2 may have
+        db.execute("UPDATE call SET parent_id = 999999 WHERE parent_id = (SELECT MIN(id) FROM call)")
+    r = Reader(t.path)
+    for n in A.stages(r)["nodes"]:
+        assert A.stage_detail(r, n["name"]) is not None
+
+
 def test_route_map_joins_the_runs(runs):
     m = A.route_map({k: A.stages(r) for k, r in runs.items()}, {"basic": "ok", "vip": "raised"})
     nodes = {n["name"]: n for n in m["nodes"]}
