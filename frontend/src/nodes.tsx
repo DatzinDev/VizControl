@@ -45,7 +45,7 @@ export function CallNodeView({ data }: NodeProps) {
   const dur = isGroup ? item.total_ns : item.duration_ns;
   return (
     <div
-      className={["node", state, isGroup && "group", selected && "selected", dim && "dim", onPath && "raised"].filter(Boolean).join(" ")}
+      className={["node", state !== "ok" && state, isGroup && "group", selected && "selected", dim && "dim", onPath && "raised"].filter(Boolean).join(" ")}
       title={`${item.qualname}\n${item.module ?? ""}`}
     >
       {handles}
