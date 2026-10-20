@@ -12,8 +12,9 @@ vizcontrol run -m package.cli serve          # a module
 pytest --vizcontrol                          # every test, one run each
 ```
 
-Runs land in `.vizcontrol/runs/`. Inside your own code, `with vizcontrol.trace("job"):` records one unit of work
-(a job, a message, a request). Serve one directory per project: stage names are decided over the runs served
+Runs land in `.vizcontrol/runs/`. A web app gets one run per request with `vizcontrol.web.ASGIMiddleware`
+(FastAPI, Starlette) or `WSGIMiddleware` (Flask, Django). Inside your own code, `with vizcontrol.trace("job"):`
+records one unit of work (a job, a message); `scoped=True` keeps out what the rest of the process does meanwhile. Serve one directory per project: stage names are decided over the runs served
 together.
 
 ## 2. Get the shape: Map and Level 1

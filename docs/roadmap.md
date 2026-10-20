@@ -11,8 +11,8 @@ The trace format and APIs are designed so none of them needs a breaking change.
 | 3 | Run comparison (FR-ANA-7, FR-VIZ-11) | analysis.compare | Done: Diff view, differing return values and `vizcontrol diff a.vizc b.vizc`. |
 | — | Route map over many runs | analysis.route_map, viewer | Done: Map tab and `/api/map`, each run's route on the joined stage graph. |
 | 4 | Chronological replay (FR-VIZ-12) | `seq`, timeline | Scrub events in order and watch values change. |
-| 5 | Async capture (FR-CAP-12) | capture | Task creation/await causality via `asyncio` task hooks, so coroutines nest by logical caller. |
-| 6 | FastAPI/ASGI instrumentation (FR-RUN-5) | 5, runners | Middleware, one run per request, sampling or header trigger. |
+| 5 | Async capture (FR-CAP-12) | capture | Done: tasks and worker-thread jobs nest under the call that started them (context variables). |
+| 6 | FastAPI/ASGI instrumentation (FR-RUN-5) | 5, runners | Done: ASGI and WSGI middleware, one scoped run per request, header or sampling. |
 | 7 | Live view | storage, server | Server-sent events while a run is being written. |
 | 8 | Serializers for popular libraries | serialization | Done: `__vizcontrol__`, `register` through the MRO, built-in views for pandas and numpy, pydantic/dataclasses as fields. Pending: SQLAlchemy models. |
 | 9 | `settrace` backend for Python < 3.12 | capture | Emits the same records; slower, documented. |

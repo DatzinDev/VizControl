@@ -16,7 +16,7 @@ side and the exploration side (NFR-DEC-1). Covers FR-PER-1..5 and NFR-OBS.
 ## Schema (format version 1.1)
 
 ```sql
-CREATE TABLE meta (            -- format_version, vizcontrol_version, pid, host (of the writer), ...
+CREATE TABLE meta (            -- format_version, vizcontrol_version, pid, host (of the writer), http_status (a request run), ...
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );

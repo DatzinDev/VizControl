@@ -27,6 +27,14 @@ with vizcontrol.trace("checkout") as run:
 print(run.path)
 ```
 
+For a web app, one run per request (FastAPI shown; `WSGIMiddleware` for Flask and Django):
+
+```python
+from vizcontrol.web import ASGIMiddleware
+
+app.add_middleware(ASGIMiddleware, every=1)   # or only requests with an X-VizControl header
+```
+
 Requires Python 3.12+ (uses `sys.monitoring`). See [docs/](https://github.com/DatzinDev/VizControl/tree/main/docs) for requirements and architecture.
 
 ## Development
