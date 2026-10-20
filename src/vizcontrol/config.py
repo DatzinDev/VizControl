@@ -25,7 +25,7 @@ class Values:
     max_str: int = 200
     max_value_bytes: int = 64 * 1024
     max_nodes: int = 100  # per encoded value: bounds the cost of every binding
-    max_per_function: int = 1000  # calls of one function with values recorded; later ones keep structure only
+    max_per_function: int = 100  # calls of one function with values recorded; later ones keep structure only
     safe_repr_types: tuple[str, ...] = ()
     serializers: dict[str, str] = field(default_factory=dict)  # "pkg.Type" -> "pkg.module:function"
 
