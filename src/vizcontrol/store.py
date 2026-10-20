@@ -78,6 +78,8 @@ class Writer:
     def __init__(self, path: str | Path, run: dict):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        for leftover in (self.path, Path(f"{self.path}-wal"), Path(f"{self.path}-shm")):  # an explicit -o overwrites
+            leftover.unlink(missing_ok=True)
         self._ids = {t: itertools.count(1).__next__ for t in ("file", "code", "call", "value", "exception", "gap")}
         self._rows: dict[str, list] = {t: [] for t in COLUMNS}
         self._closes: list[tuple] = []

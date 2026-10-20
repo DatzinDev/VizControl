@@ -49,3 +49,10 @@ def test_unclosed_file_keeps_flushed_rows(tmp_path):
     assert r.run()["outcome"] == "running"
     assert r.call(root)["outcome"] == "unfinished"
     assert r.counts()["call"] == 2
+
+
+def test_existing_file_is_overwritten(tmp_path):
+    for outcome in ("raised", "ok"):
+        w = Writer(tmp_path / "same.vizc", RUN)
+        w.close(outcome, 0, 1, [])
+    assert Reader(tmp_path / "same.vizc").run()["outcome"] == "ok"
