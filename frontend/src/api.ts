@@ -32,6 +32,7 @@ export interface StageNode {
   first_call: number;
   observed: boolean;
   modules: string[];
+  runs?: string[];  // in the route map: the runs that went through it
 }
 
 export interface StageEdge {
@@ -40,12 +41,25 @@ export interface StageEdge {
   calls: number;
   total_ns: number;
   first_seq: number;
+  runs?: string[];
 }
 
 export interface StageGraph {
   nodes: StageNode[];
   edges: StageEdge[];
   main_path: string[];
+}
+
+export interface Route {
+  run: string;
+  outcome: string | null;
+  stages: string[];
+  edges: [string, string][];
+}
+
+/** Level 1 over all served runs (`/api/map`). */
+export interface RouteMap extends StageGraph {
+  routes: Route[];
 }
 
 export interface StageFunction {
@@ -295,6 +309,7 @@ export const api = {
   objects: (r: string) => get<ObjectSummary[]>(`${run(r)}/objects`),
   error: (r: string) => get<ErrorPath | null>(`${run(r)}/error`),
   source: (r: string, fileId: number) => get<Source>(`${run(r)}/source/${fileId}`),
+  map: () => get<RouteMap>("/api/map"),
   compare: (a: string, b: string) => get<RunDiff>(`/api/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`),
   search: (r: string, q: string) => get<Hit[]>(`${run(r)}/search?q=${encodeURIComponent(q)}`),
 };

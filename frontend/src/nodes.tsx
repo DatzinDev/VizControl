@@ -105,7 +105,9 @@ export function StageNodeView({ data }: NodeProps) {
       <div className="muted" style={{ fontSize: 11 }}>
         {calls(stage.calls)}{raised ? <span className="raised"> · {stage.raised} raised</span> : null}
       </div>
-      <div className="mono muted" style={{ fontSize: 11 }}>{ms(stage.total_ns)}</div>
+      <div className="mono muted" style={{ fontSize: 11 }}>
+        {stage.runs ? `${stage.runs.length} run${stage.runs.length === 1 ? "" : "s"} · ${ms(stage.total_ns)}` : ms(stage.total_ns)}
+      </div>
     </div>
   );
 }

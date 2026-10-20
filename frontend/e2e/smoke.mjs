@@ -170,6 +170,22 @@ await check("Diff compares two runs and explains where they split", async () => 
   expect((await text(".chip.outline")).includes("vip"), "did not switch to run B");
 });
 
+await check("the map joins all runs and shows each run's route", async () => {
+  await page.goto(`${base}#run=vip.vizc&view=map`, { waitUntil: "networkidle0" });
+  await wait(1200);
+  expect((await text(".level")) === "Map · all runs", `level is ${await text(".level")}`);
+  const json = () => page.$$eval(".stage", (ns) => ns.find((n) => n.textContent.includes("json"))?.className ?? "");
+  expect((await json()).includes("dim"), "json is on the vip route, but vip never reached it");
+  const c = await nodeCenter("json");
+  await page.mouse.click(c.x, c.y);
+  await wait(400);
+  expect((await text(".inspector")).includes("Never reached it · 1"), "the inspector does not list vip as missing json");
+  await page.$$eval(".run-row", (rs) => rs.find((r) => r.textContent.includes("basic")).click());
+  await wait(1200);
+  expect((await text(".level")) === "Map · all runs", "picking a run left the map");
+  expect((await json()).includes("main"), "json is not on the basic route");
+});
+
 await check("no uncaught page errors", async () => expect(!errors.length, errors.join("; ")));
 await browser.close();
 process.exit(failures ? 1 : 0);
