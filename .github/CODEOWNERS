@@ -1,0 +1,5 @@
+# Changes to these paths request a review from the maintainer.
+*                   @zamax14
+/.github/           @zamax14
+/hatch_build.py     @zamax14
+/pyproject.toml     @zamax14
