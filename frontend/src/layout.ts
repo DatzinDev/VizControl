@@ -1,6 +1,8 @@
-import ELK from "elkjs/lib/elk.bundled.js";
+import ELK from "elkjs/lib/elk-api.js";
+import workerUrl from "elkjs/lib/elk-worker.min.js?url";
 
-const elk = new ELK();
+// elk runs in a web worker: its 1.5 MB stays out of the page bundle and layout doesn't block the page
+const elk = new ELK({ workerUrl });
 
 export interface Box {
   id: string;
