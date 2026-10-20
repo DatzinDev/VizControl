@@ -1,0 +1,86 @@
+name: Release
+
+# A tag vX.Y.Z publishes to TestPyPI, checks that release installs and works, then publishes to PyPI.
+# A manual run (workflow_dispatch) is a dry run: it stops after TestPyPI.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: tag matches __version__
+        if: github.ref_type == 'tag'
+        run: |
+          version=$(grep -Po '__version__ = "\K[^"]+' src/vizcontrol/__init__.py)
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match __version__ $version"; exit 1; }
+      - run: uv build
+      - run: uvx twine check --strict dist/*
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  testpypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/vizcontrol
+    permissions:
+      id-token: write  # trusted publishing, no tokens
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true  # a dry run may already have uploaded this version
+
+  verify:
+    needs: testpypi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+      - name: install from TestPyPI and trace the sample app
+        run: |
+          version=$(grep -Po '__version__ = "\K[^"]+' src/vizcontrol/__init__.py)
+          uv venv /tmp/fromindex
+          for attempt in $(seq 10); do  # the index takes a moment to serve a new upload
+            uv pip install --python /tmp/fromindex/bin/python --index-url https://test.pypi.org/simple/ "vizcontrol==$version" && break
+            sleep 20
+          done
+          /tmp/fromindex/bin/python -c "from importlib import resources; assert resources.files('vizcontrol').joinpath('viewer/static/index.html').is_file()"
+          cd tests/samples/shop
+          /tmp/fromindex/bin/vizcontrol run -o /tmp/vip.vizc checkout.py vip || test $? -eq 1
+          /tmp/fromindex/bin/vizcontrol info /tmp/vip.vizc | grep -q "escaped   ValueError"
+
+  pypi:
+    needs: verify
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/vizcontrol
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
