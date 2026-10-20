@@ -107,14 +107,17 @@ def stages(reader: Reader) -> dict:
     nodes: dict[str, dict] = {}
     edges: dict[tuple[str, str], dict] = {}
     roots: list[str] = []
-    for cid, parent, start, end, outcome, seq, module, observed in rows:
+    for cid, parent, start, end, outcome, seq, module, observed, kind in rows:
         stage = stage_by_call[cid] = stage_of(module, observed)
         d = dur[cid] = end - start if end is not None else 0
         n = nodes.get(stage)
         if n is None:
             n = nodes[stage] = {"name": stage, "calls": 0, "total_ns": 0, "self_ns": 0, "raised": 0,
                                 "unfinished": 0, "first_seq": seq, "first_call": cid, "observed": bool(observed),
-                                "modules": set()}
+                                "modules": set(), "first_call_is_import": kind in ("module", "class")}
+        if n["first_call_is_import"] and kind not in ("module", "class"):
+            # where a stage "starts" for a reader is its first real call, not the import that defined it
+            n["first_call"], n["first_call_is_import"] = cid, False
         n["calls"] += 1
         n["raised"] += outcome == "raised"
         n["unfinished"] += outcome == "unfinished"
@@ -137,6 +140,7 @@ def stages(reader: Reader) -> dict:
         nodes[stage]["self_ns"] += max(dur[cid] - child_dur.get(cid, 0), 0)
     for n in nodes.values():
         n["modules"] = sorted(m for m in n["modules"] if m)
+        del n["first_call_is_import"]
     return {"nodes": sorted(nodes.values(), key=lambda n: n["first_seq"]),
             "edges": sorted(edges.values(), key=lambda e: e["first_seq"]),
             "main_path": _main_path(roots, edges), "inferred": True}
