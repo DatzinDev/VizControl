@@ -262,7 +262,8 @@ def test_threads_are_linked_to_the_start_call_that_launched_them(tmp_path):
     r = Reader(t.path)
     links = A.thread_starts(r)
     assert len(links) == 3 and len(set(links.values())) == 3
-    for thread_id, start_id in links.items():
+    for root_id, start_id in links.items():
         start = r.call(start_id)
-        assert start["qualname"] == "Thread.start" and start["thread_id"] != thread_id
+        assert start["qualname"] == "Thread.start" and start["thread_id"] != r.call(root_id)["thread_id"]
+        assert r.call(root_id)["qualname"] == "recurse"
         assert r.call(start["parent_id"])["qualname"].endswith("job")
