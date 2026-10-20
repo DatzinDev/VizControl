@@ -196,6 +196,9 @@ def api(runs: Runs, path: str, q: dict):
     if rest == "/timeline":  # a page of replay steps; `seq` asks for the page starting at that point in time
         t = runs.cached(run_id, A.Timeline)
         seq = _int(q, "seq", None, 0, 1 << 62)
+        end_of = _int(q, "end_of", None, 1, 1 << 62)  # the step where a call returned or raised: a failure's
+        if end_of is not None and (c := r.call(end_of)) is not None:
+            seq = c["seq_end"] if c["seq_end"] is not None else c["seq_start"]
         offset = t.index_at(seq) if seq is not None else _int(q, "offset", 0, 0, 1 << 62)
         return t.page(r, offset, _int(q, "limit", 500, 1, 5000))
     if rest == "/callgraph":

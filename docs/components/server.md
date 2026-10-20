@@ -50,6 +50,9 @@ All responses are JSON. Lists are paged with `offset`/`limit`. Fields derived by
 | `GET /api/runs/{run}/error` | Error path, or `null`. | `analysis.error_path` |
 | `GET /api/runs/{run}/source/{file_id}` | `{path, relpath, sha256, source}`; `source` is null if not stored. | `Reader.file` |
 | `GET /api/runs/{run}/search?q=` | Hits linking to call ids. | `analysis.search` |
+| `GET /api/runs/{run}/timeline?offset=&limit=` (or `seq=`, `end_of=CALL`) | Replay steps in time order: every call's start, return or raise, with the values bound at that step (arguments, result, locals where it raised). `total` and the steps that raised come with each page; `seq` and `end_of` ask for the page at a point in time or where a call ended. | `analysis.Timeline` |
+| `GET /api/runs/{run}/callgraph` | Functions as nodes and "A called B" as edges, with call counts and the `seq` each first happened. | `analysis.call_graph` |
+| `GET /api/runs/{run}/watch?name=` | Every value a variable of that name had, anywhere in the run, in time order. | `analysis.watch` |
 | `GET /api/map` | Every readable run's stages joined into one graph, each node and edge with the runs that went through it, and each run's route. Stage names are decided over all runs (`Runs.staging`: the module depth and the head functions). | `analysis.route_map` |
 | `GET /api/compare?a={run}&b={run}` | Summary counts, the first divergence (parent, path, calls only in A / only in B, argument diff, branch source). Both ids go through the run registry. | `analysis.compare` |
 

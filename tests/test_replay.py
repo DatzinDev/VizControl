@@ -41,6 +41,7 @@ def test_a_run_replays_as_calls_and_returns_in_time_order(tmp_path):
     assert page["raises"] == [6] and page["total"] == 8
     later = api(runs, "/api/runs/r.vizc/timeline", {"seq": [str(boom["seq"])], "limit": ["2"]})
     assert later["offset"] == 6 and [s["kind"] for s in later["steps"]] == ["raise", "return"]
+    assert api(runs, "/api/runs/r.vizc/timeline", {"end_of": [str(boom["call_id"])]})["offset"] == 6
 
 
 def test_call_graph_and_watch(tmp_path):
