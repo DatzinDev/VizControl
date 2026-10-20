@@ -325,6 +325,17 @@ class Reader:
                 (like, limit)),
         }
 
+    def top_bindings(self, call_ids: list[int], kind: str) -> list[dict]:
+        """Bindings of one kind (`arg`, `return`) of the given calls, with their top-level object id."""
+        if not call_ids:
+            return []
+        marks = ", ".join("?" * len(call_ids))
+        return self._all(
+            "SELECT binding.call_id, binding.name, value.object_id, value.type, value.data, code.qualname "
+            "FROM binding JOIN value ON value.id = binding.value_id JOIN call ON call.id = binding.call_id "
+            f"JOIN code ON code.id = call.code_id WHERE binding.kind = ? AND binding.call_id IN ({marks}) "
+            "ORDER BY binding.seq", (kind, *call_ids))
+
     def bindings(self, call_id: int) -> list[dict]:
         return self._all(
             "SELECT binding.*, value.type, value.data, value.object_id FROM binding "

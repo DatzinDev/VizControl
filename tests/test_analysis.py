@@ -89,6 +89,22 @@ def test_flat_project_is_staged_by_the_functions_its_entry_fans_out_to(tmp_path)
     assert inner["stage"] == "transform"
 
 
+def test_object_flow_hops_to_the_objects_the_data_became(tmp_path):
+    with vizcontrol.trace(output=tmp_path / "hop.vizc") as t:
+        main()
+    r = Reader(t.path)
+    ret = lambda name: next(b for c in r.search(name)["functions"] for b in r.bindings(c["call_id"])  # noqa: E731
+                            if b["kind"] == "return")
+    rows, out = ret("extract"), ret("transform")
+    became = A.object_flow(r, rows["object_id"])["became"]
+    assert {b["qualname"]: b["object_id"] for b in became}["transform"] == out["object_id"]
+    assert all(b["inferred"] for b in became)
+    flow = A.object_flow(r, out["object_id"])
+    assert [(b["qualname"], b["name"], b["object_id"]) for b in flow["made_from"]] == [
+        ("transform", "rows", rows["object_id"])]
+    assert [(b["qualname"], b["object_id"], b["preview"]) for b in flow["became"]] == [("load", None, "3")]
+
+
 def test_function_rules_make_stages(tmp_path):
     with vizcontrol.trace(output=tmp_path / "rule.vizc", stages={"Load": ["*:load"], "T": ["*:trans*"]}) as t:
         main()
