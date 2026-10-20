@@ -40,6 +40,9 @@ vizcontrol = "vizcontrol.pytest_plugin"
 
 [dependency-groups]
 dev = [
+    "fastapi>=0.156.0",
+    "flask>=3.1.3",
+    "httpx>=0.28.1",
     "numpy>=2.5.4",
     "pandas>=3.0.6",
     "pydantic>=2.14.1",
