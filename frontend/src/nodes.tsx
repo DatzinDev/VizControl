@@ -1,5 +1,6 @@
 import { Handle, NodeProps, Position } from "@xyflow/react";
 import { CallNode, GroupNode, StageNode } from "./api";
+import { HiddenStub } from "./useCallTree";
 import { ms, outcomeIcon, shortName } from "./format";
 
 export const CALL_W = 220;
@@ -16,7 +17,7 @@ export const handles = (
 );
 
 export interface TreeNodeData extends Record<string, unknown> {
-  item: CallNode | GroupNode | { type: "more"; remaining: number };
+  item: CallNode | GroupNode | { type: "more"; remaining: number } | HiddenStub;
   selected: boolean;
   onPath: boolean;
   dim: boolean;
@@ -33,6 +34,13 @@ function stateClass(item: CallNode | GroupNode): string {
 
 export function CallNodeView({ data }: NodeProps) {
   const { item, selected, onPath, dim, expanded, onToggle, cut } = data as TreeNodeData;
+  if (item.type === "hidden") {
+    return (
+      <div className="node more hidden" title="Filtered out by the panel's filters">
+        {handles}hidden ({item.count})
+      </div>
+    );
+  }
   if (item.type === "more") {
     return (
       <div className="node more">

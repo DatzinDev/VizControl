@@ -73,8 +73,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .run-row { display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; border-radius: 6px; text-align: left; width: 100%; }
 .run-row:hover, .run-row.active { background: var(--surface-2); }
 .run-row .name { font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.stage-row { display: flex; gap: 8px; align-items: center; font-family: var(--mono); font-size: 12px; text-align: left; }
-.stage-row:hover { color: var(--accent); }
+.stage-row { display: flex; gap: 8px; align-items: center; font-family: var(--mono); font-size: 12px; }
+.stage-row button { display: flex; gap: 8px; align-items: center; flex: 1; text-align: left; }
+.stage-row button:hover { color: var(--accent); }
+.toggle select { font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px; }
 .toggle { display: flex; gap: 8px; align-items: center; font-size: 12px; cursor: pointer; }
 
 /* canvas */
@@ -107,6 +109,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .node.group { box-shadow: 4px 4px 0 -1px var(--surface), 4px 4px 0 0 var(--border), 8px 8px 0 -1px var(--surface), 8px 8px 0 0 var(--border); }
 .node .cut { color: var(--unfinished); margin-left: auto; }
 .node .count { color: var(--accent); font-family: var(--mono); font-size: 11px; font-weight: 700; }
+.node.more.hidden { color: var(--muted); cursor: default; }
 .node.more { height: 30px; justify-content: center; color: var(--accent); border-style: dashed; font-size: 11px; }
 .stage { width: 150px; height: 92px; padding: 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
 .stage .strip { width: 24px; height: 4px; border-radius: 2px; background: var(--ok); }
