@@ -216,6 +216,7 @@ def stages(reader: Reader, heads: frozenset | None = None) -> dict:
     nodes: dict[str, dict] = {}
     edges: dict[tuple[str, str], dict] = {}
     roots: list[str] = []
+    inside: dict[int, frozenset] = {}  # call -> stages open on its path, so a re-entered stage counts its time once
     for cid, parent, start, end, outcome, seq, module, observed, kind, _ in rows:
         stage = stage_by_call[cid]
         d = dur[cid] = end - start if end is not None else 0
@@ -231,9 +232,12 @@ def stages(reader: Reader, heads: frozenset | None = None) -> dict:
         n["raised"] += outcome == "raised"
         n["unfinished"] += outcome == "unfinished"
         n["modules"].add(module)
+        above = inside.get(parent, frozenset())
+        inside[cid] = above if stage in above else above | {stage}
+        if stage not in above:
+            n["total_ns"] += d  # time spent in a stage counts from where it is entered
         if parent is None:
             roots.append(stage)
-            n["total_ns"] += d
         else:
             child_dur[parent] += d
             pstage = stage_by_call.get(parent)
@@ -244,7 +248,6 @@ def stages(reader: Reader, heads: frozenset | None = None) -> dict:
                                                   "first_seq": seq, "calls_below": 0}
                 e["calls"] += 1
                 e["total_ns"] += d
-                nodes[stage]["total_ns"] += d  # time spent in a stage counts from where it is entered
     for cid, stage in stage_by_call.items():
         nodes[stage]["self_ns"] += max(dur[cid] - child_dur.get(cid, 0), 0)
     # subtree sizes (children come after parents in seq order): how much work each stage crossing leads to
