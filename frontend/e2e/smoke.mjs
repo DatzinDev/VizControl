@@ -43,13 +43,23 @@ await check("a passing run opens on the stage overview", async () => {
   expect((await page.$$(".stage.main")).length >= 3, "main path not highlighted");
 });
 
-await check("double-clicking a stage opens its first call", async () => {
+await check("double-clicking a stage opens it into modules, classes and functions (level 2)", async () => {
   const c = await nodeCenter("app.services");
   expect(c, "no app.services stage");
   await page.mouse.click(c.x, c.y, { count: 2 });
+  await wait(1500);
+  expect((await text(".level")) === "L2 · Components", `level is ${await text(".level")}`);
+  expect((await text(".inspector .title-lg")) === "app.services", "inspector shows another stage");
+  expect((await text(".box-node.class")).includes("OrderService"), "no OrderService class box");
+});
+
+await check("clicking a function opens its first call (level 3)", async () => {
+  const c = await nodeCenter("place_order");
+  expect(c, "no place_order function");
+  await page.mouse.click(c.x, c.y);
   await wait(1200);
   expect((await text(".level")) === "L3 · Function", `level is ${await text(".level")}`);
-  expect((await text(".inspector .title-lg")).includes("OrderService"), "inspector shows another call");
+  expect((await text(".inspector .title-lg")) === "OrderService.place_order", "inspector shows another call");
 });
 
 await check("clicking an argument opens its value (level 4)", async () => {
