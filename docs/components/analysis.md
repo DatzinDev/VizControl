@@ -53,14 +53,19 @@ A stage is a set of modules, or the calls below a head function. `Stager` assign
    `app.services.orders` → `app.services`). Opaque calls group under their top-level package (`sqlalchemy`,
    `requests`) and the stage is marked not observed inside.
 3. Flat projects: with no function rules and fewer than 3 observed module stages, a one-file script would be one
-   stage. Then the entry's module stage is split: from the root calls, a chain of lone callees (`main()` →
-   `run()`) stays the entry, and the functions the chain first fans out to (two or more) become head functions,
-   one stage each, named by qualname (`extract`, `transform`, `load`).
+   stage. Then each module stage is split: from the codes entering it (root calls, or calls from another stage),
+   a chain of lone callees (`main()` → `run()`) stays the stage, and the functions the chain first fans out to
+   (two or more) become head functions, one stage each, named by qualname (`extract`, `transform`, `load`).
 
 A head's stage takes every call below it that is in the head's own module stage, even through library calls
 (callbacks); calls in other modules keep their module stage. Heads are code objects, found from the distinct
 caller → callee code pairs, so assigning a stage to one call needs its ancestors (`Stager.of`, `head_of`), and a
 full pass needs only the parent's head (`Stager.assign`).
+
+Runs served together are staged alike (`Stager(reader, heads)`): the server splits only when all runs together
+have fewer than 3 module stages, and then uses every head any run found on its own. A test that calls `parse()`
+directly would otherwise see it as its module's entry, while the test that goes through `handle()` sees a
+`parse` stage.
 
 `StageGraph`: one node per stage (call count, total time of the calls entering it, self time, raised/unfinished
 counts, first `seq`, modules, observed) and one edge per caller-stage → callee-stage pair (calls, time, first
