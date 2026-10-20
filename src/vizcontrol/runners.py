@@ -224,7 +224,9 @@ def run_script(path: str, args: list[str], config: Config, output=None) -> int:
     sys.argv = [path, *args]
     sys.path[0] = script_dir
     run = Run("script", path, sys.argv, config, output, roots=[os.getcwd(), script_dir])
-    return _execute(run, lambda: runpy.run_path(path, run_name="__main__"))
+    # like `python path`, __file__ and tracebacks are absolute (run_path also makes sys.argv[0] absolute; argparse's
+    # prog is the basename either way)
+    return _execute(run, lambda: runpy.run_path(os.path.abspath(path), run_name="__main__"))
 
 
 def run_module(module: str, args: list[str], config: Config, output=None) -> int:
