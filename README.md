@@ -30,5 +30,6 @@ Requires Python 3.12+ (uses `sys.monitoring`). See [docs/](docs/README.md) for r
 uv sync                                   # Python package (editable) + pytest
 uv run pytest
 cd frontend && npm ci && npm run build    # viewer -> src/vizcontrol/viewer/static
+cd frontend && npm run e2e               # drive the built viewer in headless Chrome
 uv run python benchmarks/overhead.py
 ```
