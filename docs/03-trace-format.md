@@ -84,7 +84,7 @@ CREATE TABLE value (
 CREATE TABLE binding (               -- a name bound to a value at a moment
   call_id  INTEGER NOT NULL REFERENCES call(id),
   seq      INTEGER NOT NULL,
-  kind     TEXT NOT NULL,            -- arg | return | local | yield | raise
+  kind     TEXT NOT NULL,            -- arg | return | self (receiver at a method's return) | local | yield | raise
   name     TEXT,                     -- arg/local name; NULL for return
   line     INTEGER,                  -- current line when captured
   value_id INTEGER NOT NULL REFERENCES value(id)

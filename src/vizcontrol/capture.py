@@ -410,6 +410,11 @@ class Tracer:
                 self._bind(rec.id, seq, "return", None, frame.f_lineno, retval)
                 if self.state:
                     self._bind_locals(rec.id, frame, seq, "local")
+                elif code.co_argcount and code.co_varnames[0] == "self":
+                    # the receiver after a method ran: this is what makes `self.x = ...` changes visible
+                    local = frame.f_locals
+                    if "self" in local:
+                        self._bind(rec.id, seq, "self", "self", frame.f_lineno, local["self"])
             if rec.written:
                 self.w.close_call(rec.id, seq, now, "ok", None, 1, rec.children)
             else:

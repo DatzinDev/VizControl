@@ -94,7 +94,7 @@ Opaque calls are on by default and can be turned off (`opaque_calls = false`) fo
 | Level | Records |
 |---|---|
 | `calls` | call tree, timing, outcome, exception type/message/traceback |
-| `values` (default) | + arguments at `PY_START`, return value, yielded values, exception object, **locals at the frame where an exception originates** |
+| `values` (default) | + arguments at `PY_START`, return value, `self` at a method's return (so `self.x = ...` changes are visible), yielded values, exception object, **locals at the frame where an exception originates** |
 | `state` | + locals snapshot at return and at unwind |
 
 Arguments are read from `frame.f_locals` using the first `co_argcount + co_kwonlyargcount (+ *args, **kwargs)`
