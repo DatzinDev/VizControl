@@ -131,6 +131,11 @@ def api(runs: Runs, path: str, q: dict):
         return {**_summary(runs, run_id), "run": r.run(), "counts": r.counts()}
     if rest == "/stages":
         return runs.cached(run_id, A.stages)
+    if rest == "/stage":
+        name = q.get("name", [""])[0]
+        if name not in {n["name"] for n in runs.cached(run_id, A.stages)["nodes"]}:  # only real stages get cached
+            raise NotFound(f"no stage {name!r}")
+        return runs.cached(run_id, A.stage_detail, name)
     if rest == "/tree":
         node, code = _int(q, "node", None, 1, 1 << 62), _int(q, "code", None, 1, 1 << 62)
         offset, limit = _int(q, "offset", 0, 0, 1 << 62), _int(q, "limit", 200, 1, 1000)

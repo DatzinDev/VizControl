@@ -107,7 +107,7 @@ def stages(reader: Reader) -> dict:
     nodes: dict[str, dict] = {}
     edges: dict[tuple[str, str], dict] = {}
     roots: list[str] = []
-    for cid, parent, start, end, outcome, seq, module, observed, kind in rows:
+    for cid, parent, start, end, outcome, seq, module, observed, kind, _ in rows:
         stage = stage_by_call[cid] = stage_of(module, observed)
         d = dur[cid] = end - start if end is not None else 0
         n = nodes.get(stage)
@@ -168,6 +168,76 @@ def _main_path(roots: list[str], edges: dict[tuple[str, str], dict]) -> list[str
         if not nxt:
             return path
         path.append(max(nxt, key=lambda e: (e["calls_below"], e["total_ns"], -e["first_seq"]))["to"])
+
+
+# -- one stage opened (Level 2) -----------------------------------------------------------------------------------
+
+def _class_of(qualname: str) -> str | None:
+    """`OrderService.place_order` -> `OrderService`; module-level and nested (`f.<locals>.g`) functions have none."""
+    parts = qualname.split(".")
+    return ".".join(parts[:-1]) if len(parts) > 1 and "<locals>" not in parts else None
+
+
+def stage_detail(reader: Reader, stage: str) -> dict | None:
+    """Level 2 (FR-VIZ-2): one stage opened into module › class › function, one node per function (its calls
+    aggregated), the calls between them, and the calls crossing the stage boundary per (caller, callee) pair.
+    ponytail: every function of the stage is returned; page them if a stage ever has thousands."""
+    stage_of = stage_namer(reader.run()["config"])
+    codes = {c["id"]: c for c in reader.codes()}
+    stage_by_call: dict[int, str] = {}
+    code_by_call: dict[int, int] = {}
+    dur: dict[int, int] = {}
+    child_dur: dict[int, int] = defaultdict(int)
+    funcs: dict[int, dict] = {}
+    internal: dict[tuple, int] = defaultdict(int)
+    incoming: dict[tuple, int] = defaultdict(int)
+    outgoing: dict[tuple, int] = defaultdict(int)
+    total = 0
+    for cid, parent, start, end, outcome, seq, module, observed, kind, code_id in reader.all_calls():
+        s = stage_by_call[cid] = stage_of(module, observed)
+        code_by_call[cid] = code_id
+        d = dur[cid] = end - start if end is not None else 0
+        if parent is not None:
+            child_dur[parent] += d
+        pstage = stage_by_call.get(parent)
+        if s == stage:
+            f = funcs.get(code_id)
+            if f is None:
+                c = codes[code_id]
+                f = funcs[code_id] = {
+                    "code_id": code_id, "qualname": c["qualname"], "module": module,
+                    "cls": c["qualname"] if kind == "class" else _class_of(c["qualname"]),  # class body: in its class
+                    "file": c["relpath"] or c["path"], "kind": kind, "observed": bool(observed), "calls": 0,
+                    "total_ns": 0, "self_ns": 0, "raised": 0, "unfinished": 0, "first_call": cid, "first_seq": seq}
+            f["calls"] += 1
+            f["total_ns"] += d
+            f["raised"] += outcome == "raised"
+            f["unfinished"] += outcome == "unfinished"
+            if pstage == stage:
+                internal[(code_by_call[parent], code_id)] += 1
+            else:
+                total += d
+                incoming[(pstage, parent and code_by_call[parent], code_id)] += 1
+        elif pstage == stage:
+            outgoing[(code_by_call[parent], s)] += 1
+    if not funcs:
+        return None
+    for cid, s in stage_by_call.items():
+        if s == stage:
+            funcs[code_by_call[cid]]["self_ns"] += max(dur[cid] - child_dur.get(cid, 0), 0)
+    fs = sorted(funcs.values(), key=lambda f: f["first_seq"])
+    return {
+        "stage": stage, "observed": any(f["observed"] for f in fs), "functions": fs,
+        "edges": [{"from": a, "to": b, "calls": n} for (a, b), n in internal.items()],
+        "incoming": [{"stage": st, "from_code": fc, "from_qualname": fc and codes[fc]["qualname"], "to": to,
+                      "calls": n} for (st, fc, to), n in incoming.items()],
+        "outgoing": [{"from": fc, "stage": st, "calls": n} for (fc, st), n in outgoing.items()],
+        "stats": {"modules": len({f["module"] for f in fs}), "classes": len({(f["module"], f["cls"]) for f in fs
+                                                                             if f["cls"]}),
+                  "functions": len(fs), "calls": sum(f["calls"] for f in fs), "total_ns": total,
+                  "self_ns": sum(f["self_ns"] for f in fs)},
+        "inferred": True,
+    }
 
 
 # -- values and data flow -----------------------------------------------------------------------------------------
