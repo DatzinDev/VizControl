@@ -604,7 +604,7 @@ def error_path(reader: Reader, heads: frozenset | None = None, depth: int | None
     """The exception that ended the run: where it started, how execution got there, how it propagated,
     and the latest observed changes to the objects in scope (FR-ANA-5)."""
     escaped = [e for e in reader.exceptions() if e["handled_call_id"] is None and e["raised_call_id"] is not None]
-    if not escaped:
+    if not escaped or reader.run()["outcome"] == "ok":  # sys.exit(0), pytest.raises: nothing failed
         return None
     exc = escaped[-1]
     path = reader.ancestors(exc["raised_call_id"])
