@@ -50,22 +50,26 @@ A stage is a set of modules, or the calls below a head function. `Stager` assign
    `API = ["app.api.*"]`, `Service = ["app.services.*"]`, `Persistence = ["app.repo.*", "sqlalchemy.*"]`.
    A glob with a colon matches `module:qualname` and makes a head function: `Load = ["etl:load_*"]`.
 2. Default: the module path truncated to `stage_depth` components below the project root (default 2:
-   `app.services.orders` → `app.services`). Opaque calls group under their top-level package (`sqlalchemy`,
-   `requests`) and the stage is marked not observed inside.
+   `app.services.orders` → `app.services`). When that gives more than 12 stages (`MAX_STAGES`), a package of
+   many modules, the depth is 1: `black.linegen`, `black.nodes`, ... are one stage `black`, opened at Level 2.
+   A configured `stage_depth` is used as is. `__main__` is named after the script (`checkout.py` → `checkout`)
+   or the `-m` module. Opaque calls group under their top-level package (`sqlalchemy`, `requests`) and the stage
+   is marked not observed inside.
 3. Flat projects: with no function rules and fewer than 3 observed module stages, a one-file script would be one
    stage. Then each module stage is split: from the codes entering it (root calls, or calls from another stage),
    a chain of lone callees (`main()` → `run()`) stays the stage, and the functions the chain first fans out to
    (two or more) become head functions, one stage each, named by qualname (`extract`, `transform`, `load`). A
-   loop body counts as lone: a callee with 90% of its siblings' calls (`handle()` ×1000 next to `setup()`) leads
-   on, and its few siblings stay in the stage.
+   loop body counts as lone: a callee with 90% of its siblings' calls from that caller (`handle()` ×1000 next to
+   `setup()`) leads on, and its few siblings stay in the stage. The program's own entry (root calls) is followed
+   before the calls a library makes back into the project (doctest, a test runner), so those don't take its place.
 
 A head's stage takes every call below it that is in the head's own module stage, even through library calls
 (callbacks); calls in other modules keep their module stage. Heads are code objects, found from the distinct
 caller → callee code pairs, so assigning a stage to one call needs its ancestors (`Stager.of`, `head_of`), and a
 full pass needs only the parent's head (`Stager.assign`).
 
-Runs served together are staged alike (`Stager(reader, heads)`): the server splits only when all runs together
-have fewer than 3 module stages, and then uses every head any run found on its own. A test that calls `parse()`
+Runs served together are staged alike (`Stager(reader, heads, depth)`, `Runs.staging`): the depth comes from all
+runs' module stages together, and the server splits only when all runs together have fewer than 3 module stages, and then uses every head any run found on its own. A test that calls `parse()`
 directly would otherwise see it as its module's entry, while the test that goes through `handle()` sees a
 `parse` stage.
 

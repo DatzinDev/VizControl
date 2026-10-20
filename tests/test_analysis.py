@@ -13,7 +13,7 @@ def runs(runs_dir):
 
 def test_stages_and_main_path(runs):
     g = A.stages(runs["basic"])
-    assert g["inferred"] and g["main_path"][:3] == ["__main__", "app.api", "app.services"]
+    assert g["inferred"] and g["main_path"][:3] == ["checkout", "app.api", "app.services"]
     nodes = {n["name"]: n for n in g["nodes"]}
     assert nodes["json"]["observed"] is False  # library stage, grouped under its top package
     first = runs["basic"].call(nodes["app.services"]["first_call"])
@@ -225,9 +225,38 @@ def test_a_module_called_from_another_splits_at_the_functions_it_is_entered_by(t
     assert [n["name"] for n in A.stages(r)["nodes"]] == ["lib_a"]
     assert [n["name"] for n in A.stages(r, A.Stager(Reader(tmp_path / "two.vizc")).names)["nodes"]] == ["parse"]
     runs = Runs(tmp_path)  # served together, a run's heads are every run's heads
-    assert runs.heads() == {("lib_a", "parse"), ("lib_a", "save")}
+    assert runs.staging() == ({("lib_a", "parse"), ("lib_a", "save")}, 2)
     parse = next(n for n in api(runs, "/api/map", {})["nodes"] if n["name"] == "parse")
     assert parse["runs"] == ["direct.vizc", "two.vizc"]
+
+
+def test_a_project_of_many_modules_is_staged_by_package(tmp_path, monkeypatch):
+    big = tmp_path / "big"
+    big.mkdir()
+    (big / "__init__.py").write_text("")
+    for i in range(13):
+        (big / f"m{i}.py").write_text(f"def f():\n    return {i}\n")
+    (tmp_path / "small.py").write_text("def g():\n    return 0\n")
+    (tmp_path / "pkgdriver.py").write_text(
+        "import small\n" + "".join(f"import big.m{i}\n" for i in range(13))
+        + "\n\ndef go():\n    return small.g() + " + " + ".join(f"big.m{i}.f()" for i in range(13)) + "\n\n\n"
+        "def one():\n    return small.g() + big.m0.f()\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    import pkgdriver
+
+    with vizcontrol.trace(output=tmp_path / "all.vizc") as t:
+        pkgdriver.go()
+    assert [n["name"] for n in A.stages(Reader(t.path))["nodes"]] == ["pkgdriver", "small", "big"]
+    with vizcontrol.trace(output=tmp_path / "one.vizc") as t:
+        pkgdriver.one()
+    assert "big.m0" in [n["name"] for n in A.stages(Reader(t.path))["nodes"]]  # alone, few modules: depth 2
+    runs = Runs(tmp_path)  # served with all.vizc, the project is staged by package in every run
+    assert runs.staging() == (frozenset(), 1)
+    assert "big" in [n["name"] for n in api(runs, "/api/runs/one.vizc/stages", {})["nodes"]]
+    with vizcontrol.trace(output=tmp_path / "deep.vizc", stage_depth=2) as t:
+        pkgdriver.go()
+    assert "big.m12" in [n["name"] for n in A.stages(Reader(t.path))["nodes"]]  # a configured depth wins
 
 
 def test_route_map_joins_the_runs(runs):
@@ -237,7 +266,7 @@ def test_route_map_joins_the_runs(runs):
     assert nodes["app.services"]["runs"] == ["basic", "vip"] and nodes["json"]["runs"] == ["basic"]
     assert nodes["app.pricing"]["raised"] >= 1 and nodes["app.repo"]["raised"] == 0  # summed over the runs
     assert edges[("app.repo", "json")] == ["basic"] and edges[("app.pricing", "decimal")] == ["vip"]
-    assert m["main_path"][:3] == ["__main__", "app.api", "app.services"]
+    assert m["main_path"][:3] == ["checkout", "app.api", "app.services"]
     vip = next(x for x in m["routes"] if x["run"] == "vip")
     assert vip["outcome"] == "raised" and "json" not in vip["stages"] and ["app.pricing", "decimal"] in vip["edges"]
 

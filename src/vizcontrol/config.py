@@ -47,7 +47,7 @@ class Config:
     threads: bool = True
     store_source: bool = True
     out_dir: str = ".vizcontrol/runs"
-    stage_depth: int = 2
+    stage_depth: int | None = None  # None: 2, or 1 for a project of many modules (analysis.auto_depth)
     stages: dict[str, tuple[str, ...]] = field(default_factory=dict)
     limits: Limits = field(default_factory=Limits)
     values: Values = field(default_factory=Values)
