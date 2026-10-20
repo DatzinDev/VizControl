@@ -17,6 +17,9 @@ class ViewerBuildHook(BuildHookInterface):
         frontend = root / "frontend"
         npm = shutil.which("npm")
         if not frontend.is_dir() or npm is None:
-            raise RuntimeError("the viewer is not built and npm is not available: run `npm ci && npm run build` in frontend/")
-        subprocess.run([npm, "ci", "--no-fund", "--no-audit"], cwd=frontend, check=True)
-        subprocess.run([npm, "run", "build"], cwd=frontend, check=True)
+            raise RuntimeError(
+                "the viewer is not built and npm is not available: run `npm ci && npm run build` in frontend/")
+        # --ignore-scripts: third-party install scripts never run while building the package
+        # fixed argument lists, no shell, npm resolved from PATH by the person building
+        subprocess.run([npm, "ci", "--ignore-scripts", "--no-fund", "--no-audit"], cwd=frontend, check=True)  # noqa: S603
+        subprocess.run([npm, "run", "build"], cwd=frontend, check=True)  # noqa: S603
