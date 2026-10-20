@@ -18,6 +18,7 @@ FR-ANA-1..8, supports FR-VIZ-1..13.
 def subtree(reader, call_id: int | None, depth=1, limit=200, stage_of=None) -> list[dict]   # FR-ANA-1/3
 def group_members(reader, call_id, code_id, offset=0, limit=200) -> list[dict]           # expand a "×N" group
 def stages(reader) -> StageGraph   # rules come from the run's recorded config             # FR-ANA-2
+def stage_detail(reader, stage: str) -> StageDetail | None                                 # FR-VIZ-2
 def error_path(reader) -> ErrorPath | None                                                # FR-ANA-5
 def object_flow(reader, object_id: int) -> ObjectFlow                                     # FR-ANA-4/6
 def value_diff(a: dict, b: dict) -> list[Change]                                          # FR-ANA-6
@@ -25,7 +26,7 @@ def compare(reader_a, reader_b) -> RunDiff                                      
 def search(reader, query: str) -> list[Hit]                                               # FR-ANA-8
 ```
 
-Results are plain JSON-able dicts. The server caches the expensive ones (`stages`, `error_path`) per run and
+Results are plain JSON-able dicts. The server caches the expensive ones (`stages`, `stage_detail`, `error_path`) per run and
 drops them when the file's mtime changes. Nothing is written back into `.vizc` files in v1.
 
 ## Algorithms
@@ -57,6 +58,20 @@ counts, first `seq`, modules, observed) and one edge per caller-stage → callee
 leads to the most calls (the subtree size of the calls crossing it; time only breaks ties) to a stage not yet on the
 path. Counts are deterministic, while timings are noise in small runs (a time-based rule flipped between CI runs). That is the `Request → Controller → Service → ... → Response`
 line of Level 1.
+
+### One stage opened, Level 2 (FR-VIZ-2)
+
+`stage_detail` makes one pass over all calls, with the same stage names as Level 1:
+
+- **Functions**: one node per code object of the stage, with its calls, total and self time, raised and unfinished
+  counts and first call. `cls` comes from the qualname (`OrderService.place_order` → `OrderService`; module-level
+  and `<locals>` functions have none). A class body goes into its own class, and a module body is the import.
+- **Edges**: caller code → callee code inside the stage, with a count.
+- **Incoming / outgoing**: calls crossing the stage boundary, per (caller stage, caller code, callee code) and
+  per (caller code, callee stage).
+- **Stats**: modules, classes, functions, calls, the time of the calls entering the stage, and self time.
+
+Every function of the stage is returned. Paging is the upgrade if a stage ever has thousands.
 
 ### Error path (FR-ANA-5)
 
