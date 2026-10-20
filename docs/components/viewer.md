@@ -13,7 +13,8 @@ lays out, renders and navigates. Visual concept: [UI design](../ui-design.md).
 | Done | Pending |
 |---|---|
 | Shell (top bar, breadcrumbs, runs/stages/filters panel, inspector), dark and light themes from the Penpot tokens | Timeline strip |
-| Level 1 stage graph with main path. Double-click (or the stage list) reveals the stage's first call | Level 2 as module › class compound nodes: the call tree is used for Level 2 for now |
+| Level 1 stage graph with main path. Double-click (or the stage list) opens the stage at Level 2 | Moving between levels without animated zoom |
+| Level 2: the stage as module › class › function boxes (elk compound layout, top to bottom), neighbouring stages collapsed around it; a function opens its first call, a collapsed stage opens that stage | |
 | Level 3 call tree: lazy expansion, `×N` groups with paged members, opaque/unfinished/raised states | Diff tab (disabled) |
 | Failure mode: opens on the origin, red error path, off-path dimming, exception/locals/last-changes/traceback/source | "hidden (N)" stubs for filtered nodes. The only filter today hides library leaves |
 | Level 4 value tree, object history and field-level changes | Source panel beyond the inspector excerpt |
@@ -45,8 +46,8 @@ can be bookmarked and back/forward work (FR-VIZ-5).
 | Level | Canvas shows | Inspector shows | Enter by |
 |---|---|---|---|
 | 1 Overview (FR-VIZ-1) | Stage nodes on the main path, other stages dimmed below; edges with call counts. | Run summary: target, outcome, duration, calls, truncation. | Opening a run. |
-| 2 Components (FR-VIZ-2) | The selected stage expanded into module → class → function compound nodes; call edges between them. Other stages stay as collapsed nodes at the edges for context. | Stage stats. | Double-click a stage. |
-| 3 Function (FR-VIZ-3) | Call subtree of the selected call (children loaded lazily, groups as "×N" nodes). | Location (file:line, link to source), caller, args, return, duration, exception, children, snapshots. | Click a function node. |
+| 2 Components (FR-VIZ-2) | The selected stage expanded into module → class → function compound nodes (one node per function, its calls added up; imports and class bodies show as `import` and `class body`); call edges between them. Other stages stay as collapsed nodes at the edges for context. | Stage stats, entered from, calls out to, files. | Double-click a stage, the stage list, or the stage crumb at Level 3. |
+| 3 Function (FR-VIZ-3) | Call subtree of the selected call (children loaded lazily, groups as "×N" nodes). | Location (file:line, link to source), caller, args, return, duration, exception, children, snapshots. | Click a function node (its first call). |
 | 4 Values (FR-VIZ-4) | Unchanged. | Value tree with expand/collapse; for objects: appearances over time, diff between two selected states. | Click a value in the inspector. |
 
 Moving between levels animates the zoom in or out and never replaces the canvas abruptly. `Esc` or a breadcrumb
