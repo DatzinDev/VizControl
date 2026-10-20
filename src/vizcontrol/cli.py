@@ -112,7 +112,20 @@ def main(argv: list[str] | None = None) -> int:
     info.add_argument("file")
     ls = sub.add_parser("ls", help="list runs in a directory")
     ls.add_argument("dir", nargs="?", default=load_config().out_dir)
+    srv = sub.add_parser("serve", help="explore runs in the browser")
+    srv.add_argument("path", nargs="?", default=load_config().out_dir, help="a .vizc file or a directory of runs")
+    srv.add_argument("--port", type=int, default=7171)
+    srv.add_argument("--host", default="127.0.0.1")
+    srv.add_argument("--no-browser", action="store_true")
     args = p.parse_args(argv)
     if args.command == "info":
         return _info(args.file)
+    if args.command == "serve":
+        from vizcontrol.server import serve
+
+        try:
+            return serve(args.path, args.host, args.port, not args.no_browser)
+        except (FileNotFoundError, OSError) as e:
+            print(f"vizcontrol: {e}", file=sys.stderr)
+            return 1
     return _ls(args.dir)

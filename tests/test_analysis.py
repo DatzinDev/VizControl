@@ -1,23 +1,13 @@
-import subprocess
-import sys
-from pathlib import Path
-
 import pytest
 
 import vizcontrol
 from vizcontrol import analysis as A
 from vizcontrol.store import Reader
 
-SHOP = Path(__file__).parent / "samples" / "shop"
-
 
 @pytest.fixture(scope="module")
-def runs(tmp_path_factory):
-    d = tmp_path_factory.mktemp("runs")
-    for tier in ("basic", "vip"):
-        subprocess.run([sys.executable, "-m", "vizcontrol", "run", "-o", str(d / f"{tier}.vizc"), "checkout.py", tier],
-                       cwd=SHOP, capture_output=True, timeout=60)
-    return {tier: Reader(d / f"{tier}.vizc") for tier in ("basic", "vip")}
+def runs(runs_dir):
+    return {tier: Reader(runs_dir / f"{tier}.vizc") for tier in ("basic", "vip")}
 
 
 def test_stages_and_main_path(runs):

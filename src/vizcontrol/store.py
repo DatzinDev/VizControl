@@ -264,5 +264,8 @@ class Reader:
         row = self._one("SELECT source FROM file WHERE id = ?", (file_id,))
         return row and row["source"]
 
+    def file(self, file_id: int) -> dict | None:
+        return self._one("SELECT * FROM file WHERE id = ?", (file_id,))
+
     def close(self) -> None:
         self.db.close()
