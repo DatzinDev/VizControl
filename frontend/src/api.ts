@@ -17,6 +17,7 @@ export interface RunSummary {
   max_depth: number | null;
   cut_calls: number[];  // where max_calls stopped tracing
   process_gone: boolean;
+  http_status: string | null;  // a run of one HTTP request: its response status
   regions: { id: number; name: string; call_id: number | null; seq_start: number; seq_end: number }[];  // nested trace() blocks  // never closed and its process no longer exists: killed (inferred)
   error?: string;
 }
