@@ -6,6 +6,8 @@ model's guess about the code.
 
 > We don't want an AI to tell us how our software works. We want to observe how it really works.
 
+Using it: [Understanding a project you didn't write](guide.md).
+
 ## Reading order
 
 1. [Requirements](01-requirements.md): what v1 must do, numbered `FR-*` / `NFR-*`.
