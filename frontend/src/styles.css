@@ -105,6 +105,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .node .expand { position: absolute; right: -11px; top: 18px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border); font-size: 10px; display: grid; place-items: center; color: var(--muted); }
 .node .expand:hover { color: var(--accent); border-color: var(--accent); }
 .node.group { box-shadow: 4px 4px 0 -1px var(--surface), 4px 4px 0 0 var(--border), 8px 8px 0 -1px var(--surface), 8px 8px 0 0 var(--border); }
+.node .cut { color: var(--unfinished); margin-left: auto; }
 .node .count { color: var(--accent); font-family: var(--mono); font-size: 11px; font-weight: 700; }
 .node.more { height: 30px; justify-content: center; color: var(--accent); border-style: dashed; font-size: 11px; }
 .stage { width: 150px; height: 92px; padding: 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }

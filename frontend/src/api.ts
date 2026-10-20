@@ -14,6 +14,8 @@ export interface RunSummary {
   calls: number;
   truncated: string[];
   level: string;
+  max_depth: number | null;
+  cut_calls: number[];  // where max_calls stopped tracing
   error?: string;
 }
 
