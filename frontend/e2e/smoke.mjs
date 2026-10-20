@@ -240,7 +240,7 @@ if (bigBase) await check("a package of many modules is one stage, opened on its 
   expect((await page.$$(".react-flow__node-fn")).length === 0, "functions show before opening a module");
   await page.$$eval(".react-flow__node-module", (ns) => ns.find((n) => n.textContent.includes("m3.py")).click());
   await wait(1500);
-  expect((await page.$$(".react-flow__node-fn")).length === 4, "opening m3.py does not show its 4 functions");
+  expect((await page.$$(".react-flow__node-fn")).length === 5, "opening m3.py does not show its import and 4 functions");
 });
 
 await check("no uncaught page errors", async () => expect(!errors.length, errors.join("; ")));
