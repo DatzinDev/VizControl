@@ -86,8 +86,9 @@ click goes up one level.
   from and what it became (inferred hops to follow past a function that builds a new object), other objects in the
   run and the provenance note. The canvas starts at a readable zoom from the first step instead of fitting a long flow.
 - **Diff** (FR-VIZ-11): the current run (A) and a picked run (B) side by side: the common path to where they split,
-  each side's calls there, and why (argument diff, branch source). The URL keeps `vs`. A card opens its call in its
-  run; Back returns to the diff.
+  each side's calls there, and why (argument diff, branch source), then the same calls that returned something
+  different, in the order they returned, with the first difference in the inspector. The URL keeps `vs`. A card
+  opens its call in its run; Back returns to the diff.
 - **Source panel** (FR-VIZ-9, Should): read-only code view of the call's file with the call/raise line
   highlighted, from `/source`.
 

@@ -264,7 +264,7 @@ export interface DiffCall {
 
 /** Two runs aligned: where they split and why (FR-ANA-7). */
 export interface RunDiff {
-  summary: { matched: number; only_a: number; only_b: number; outcome_a: Outcome; outcome_b: Outcome; truncated: boolean };
+  summary: { matched: number; returns_differ: number; only_a: number; only_b: number; outcome_a: Outcome; outcome_b: Outcome; truncated: boolean };
   divergence: {
     parent_a: number | null;
     parent_b: number | null;
@@ -275,6 +275,8 @@ export interface RunDiff {
     args: { name: string; same: boolean; a: string | null; b: string | null; changes: Diff[] }[];
     branch: { file: string; first: number; lines: string[]; a_lines: number[]; b_lines: number[] } | null;
   } | null;
+  /** Matched calls that returned something different, in the order they returned in A. */
+  returns: { a: number; b: number; qualname: string; module: string | null; a_value: string; b_value: string; changes: Diff[] }[];
 }
 
 export interface Hit {
