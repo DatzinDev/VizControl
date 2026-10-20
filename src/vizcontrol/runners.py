@@ -17,7 +17,7 @@ import time
 import traceback
 from pathlib import Path
 
-from vizcontrol.capture import Tracer
+from vizcontrol.capture import SCOPE, Tracer
 from vizcontrol.config import Config, load_config
 from vizcontrol.serialize import Encoder
 from vizcontrol.store import Writer
@@ -119,11 +119,16 @@ def _outcome(exc: BaseException | None) -> str:
 
 
 class trace:
-    """Trace a block: `with vizcontrol.trace("checkout") as t: ...; t.path`. Options override the config."""
+    """Trace a block: `with vizcontrol.trace("checkout") as t: ...; t.path`. Options override the config.
+
+    `scoped=True` records only what runs in this block's context and the tasks it starts, not other requests or
+    jobs the process runs at the same time (they would otherwise land in this run: monitoring is process-wide)."""
 
     def __init__(self, name: str | None = None, *, output: str | os.PathLike | None = None,
-                 config: Config | None = None, **options):
+                 config: Config | None = None, scoped: bool = False, kind: str = "api", **options):
         self.name, self.output, self.config, self.options = name, output, config, options
+        self.scoped, self.kind = scoped, kind
+        self._scope = None
         self.run: Run | None = None
         self.path: Path | None = None
         self.region: list | None = None
@@ -136,14 +141,19 @@ class trace:
             self.region = _active.tracer.mark(target)
             return self
         config = self.config or load_config(**self.options)
-        self.run = Run("api", target, sys.argv, config, self.output)
+        self.run = Run(self.kind, target, sys.argv, config, self.output)
         self.path = self.run.path
+        if self.scoped:
+            self.run.tracer.scoped = True
+            self._scope = SCOPE.set(self.run.tracer)
         self.run.start()
         return self
 
     def __exit__(self, exc_type, exc, tb) -> bool:
         if self.run is not None:
             self.run.finish(_outcome(exc))
+            if self._scope is not None:
+                SCOPE.reset(self._scope)
         elif self.region is not None and not self.parent.done:
             self.parent.tracer.unmark(self.region)
         return False

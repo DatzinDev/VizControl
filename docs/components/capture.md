@@ -64,8 +64,14 @@ Excludes win over includes; a non-empty `include` replaces the project-root rule
   memory.
 - `PY_UNWIND`: pop, `outcome = raised`, link the in-flight exception.
 - Generators/coroutines: `PY_YIELD` pops but keeps the record open; `PY_RESUME`/`PY_THROW` push the same record
-  again. One generator invocation is one call node; calls during any resume are its children. Async task
-  causality is FR-CAP-12 (Later).
+  again. One generator invocation is one call node; calls during any resume are its children.
+- Async causality (FR-CAP-12): a `ContextVar` holds the innermost traced call of the running context, set on
+  every push and pop. asyncio copies the context into each task it creates (`create_task`, `gather`), and so do
+  `asyncio.to_thread` and anyio's worker threads, so a task's first call finds the call that created it, even after
+  that call returned. When the context's caller is not the innermost traced call on the thread's stack, the code
+  runs in another context (a task, a job), and the context wins: `gather`'s tasks hang under the coroutine that
+  awaited them, not under `asyncio.run`. The common case (the stack's top is the context's caller) costs one
+  `ContextVar.get`. `loop.run_in_executor` copies no context, so its jobs stay roots.
 - Frames are obtained with `sys._getframe(1)` inside the callback. No frame reference is stored past the
   callback.
 
@@ -114,6 +120,9 @@ reference while in flight (exceptions don't support weakrefs):
   more than 64 have accumulated or at stop.
 - Caught in an untraced frame with nothing traced on the stack (the runner, the `trace()` block) = escaped,
   `handled_call_id = NULL`.
+- `StopIteration`, `StopAsyncIteration` and `GeneratorExit` are not recorded: they are how generators and
+  coroutines end, and `await` catches the StopIteration that carries a result in C, with no `EXCEPTION_HANDLED`,
+  so it would look escaped.
 - The message is `BaseException.__str__` when all args are simple types, so no user `__str__` runs.
   `__cause__`/`__context__` link through `cause_id`. The traceback is stored as JSON without VizControl/runpy
   frames.
