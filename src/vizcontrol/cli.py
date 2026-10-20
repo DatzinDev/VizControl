@@ -103,6 +103,59 @@ def _diagram(path: str, stage: str | None) -> int:
     return 0
 
 
+def _change(name: str, c: dict) -> str:
+    field = name + ("" if c["path"] == "." else c["path"])
+    if c["op"] == "added":
+        return f"+ {field} = {c['after']}"
+    if c["op"] == "removed":
+        return f"- {field} (was {c['before']})"
+    if c["op"] == "unknown":
+        return f"? {field} (not fully captured)"
+    return f"~ {field} {c['before']} -> {c['after']}"
+
+
+def _diff(path_a: str, path_b: str) -> int:
+    """Like diff(1): 0 when the runs made the same calls with the same results, 1 when they differ, 2 on trouble."""
+    from vizcontrol import analysis
+    from vizcontrol.store import Reader
+
+    try:
+        a, b = Reader(path_a), Reader(path_b)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"vizcontrol: {e}", file=sys.stderr)
+        return 2
+    d = analysis.compare(a, b)
+    s, div = d["summary"], d["divergence"]
+    for side, path, r in (("A", path_a, a), ("B", path_b, b)):
+        print(f"{side}  {path}  {r.run()['outcome']}")
+    print(f"matched {s['matched']} · only in A {s['only_a']} · only in B {s['only_b']} · "
+          f"different result {s['returns_differ']}" + (" (counts capped)" if s["truncated"] else ""))
+    if div:
+        p = div["parent"]
+        where = f"{p['qualname']} ({p['file']}:{p['line']})" if p else "the run itself"
+        print(f"\nfirst divergence in {where}")
+        print("  path      " + " > ".join(x["a"]["qualname"] for x in div["path"]))
+        for side, calls in (("A", div["only_a"]), ("B", div["only_b"])):
+            names = ", ".join(c["qualname"] + (f" (line {c['call_line']})" if c["call_line"] else "") for c in calls)
+            print(f"  only in {side} {names or 'nothing more'}")
+        for arg in div["args"]:
+            for c in arg["changes"]:
+                print(f"  {_change(arg['name'], c)}")
+        if div["branch"]:
+            br = div["branch"]
+            print(f"  branch    {br['file']}")
+            for i, line in enumerate(br["lines"], br["first"]):
+                mark = "   # B" if i in br["b_lines"] else "   # A" if i in br["a_lines"] else ""
+                print(f"  {i:>6}  {line}{mark}")
+    if d["returns"]:
+        print(f"\ndifferent results (first {len(d['returns'])} of {s['returns_differ']}, in the order they returned)")
+        for r in d["returns"]:
+            print(f"  {r['qualname']}  {r['a_value']}  ->  {r['b_value']}")
+            for c in r["changes"][:3]:
+                print(f"      {_change('return', c)}")
+    return 1 if div or d["returns"] else 0
+
+
 def _ls(directory: str) -> int:
     from vizcontrol.store import Reader
 
@@ -134,6 +187,9 @@ def main(argv: list[str] | None = None) -> int:
     dia = sub.add_parser("diagram", help="a run's stages (or one stage opened) as a Mermaid flowchart")
     dia.add_argument("file")
     dia.add_argument("--stage", help="open this stage into its modules, classes and functions (Level 2)")
+    dif = sub.add_parser("diff", help="where two runs split, and which calls returned something else")
+    dif.add_argument("a")
+    dif.add_argument("b")
     srv = sub.add_parser("serve", help="explore runs in the browser")
     srv.add_argument("path", nargs="?", default=load_config().out_dir, help="a .vizc file or a directory of runs")
     srv.add_argument("--port", type=int, default=7171)
@@ -142,6 +198,8 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
     if args.command == "info":
         return _info(args.file)
+    if args.command == "diff":
+        return _diff(args.a, args.b)
     if args.command == "diagram":
         return _diagram(args.file, args.stage)
     if args.command == "serve":
