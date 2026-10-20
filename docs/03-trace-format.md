@@ -13,7 +13,7 @@ side and the exploration side (NFR-DEC-1). Covers FR-PER-1..5 and NFR-OBS.
 - Journal mode is `WAL` while writing. The writer checkpoints and switches to `DELETE` on close, so the result is a
   single file.
 
-## Schema (format version 1)
+## Schema (format version 1.1)
 
 ```sql
 CREATE TABLE meta (            -- format_version, vizcontrol_version, pid, host (of the writer), ...
@@ -116,6 +116,14 @@ CREATE TABLE gap (                   -- explicit "not captured" facts (NFR-OBS)
   detail  TEXT
 );
 
+CREATE TABLE region (                -- a nested trace() block inside the run (since 1.1)
+  id        INTEGER PRIMARY KEY,
+  name      TEXT NOT NULL,
+  call_id   INTEGER REFERENCES call(id), -- innermost traced call where the block started
+  seq_start INTEGER NOT NULL,
+  seq_end   INTEGER
+);
+
 CREATE INDEX call_parent  ON call(parent_id, seq_start);
 CREATE INDEX call_code    ON call(code_id);
 CREATE INDEX binding_call ON binding(call_id, seq);
@@ -154,7 +162,7 @@ optional for readers. v1 writes none and caches analysis in memory.
 
 ## Compatibility rules
 
-- `meta.format_version` is `MAJOR.MINOR`. Minor bumps only add tables, columns or tags; readers ignore what they
+- `meta.format_version` is `MAJOR.MINOR` (1.1 added `region`; a 1.0 file reads as having none). Minor bumps only add tables, columns or tags; readers ignore what they
   don't know. Major bumps require a reader upgrade. Old readers refuse with a clear message (FR-PER-5).
 - The viewer never reads SQLite directly. It sees the [server API](components/server.md), which can adapt older
   files.

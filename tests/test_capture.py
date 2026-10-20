@@ -229,3 +229,20 @@ def test_cli_argv_secret_never_reaches_disk(tmp_path):
                    cwd=tmp_path, capture_output=True, timeout=60, check=True)
     assert b"hunter2" not in out.read_bytes()
     assert Reader(out).run()["argv"] == ["noop.py", "--password=‹redacted›"]
+
+
+def inner_step(n):
+    with vizcontrol.trace("inner step"):
+        return recurse(n)
+
+
+def test_nested_trace_marks_a_region_in_the_active_run(tmp_path):
+    with vizcontrol.trace("outer", output=tmp_path / "o.vizc") as t:
+        recurse(1)
+        inner_step(2)
+    r = Reader(t.path)
+    [region] = r.regions()
+    assert region["name"] == "inner step" and r.call(region["call_id"])["qualname"] == "inner_step"
+    inside = [c for c in by_name(r, "recurse") if region["seq_start"] < c["seq_start"] < region["seq_end"]]
+    assert len(inside) == 3 and len(by_name(r, "recurse")) == 5
+    assert list(tmp_path.iterdir()) == [tmp_path / "o.vizc"]  # one run, not two

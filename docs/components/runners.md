@@ -53,8 +53,9 @@ def handle(event): ...
 
 - `trace()` accepts the same options as the config file (keyword arguments override config).
 - `trace()` re-raises any exception from the block after recording it, so it never swallows errors.
-- Nesting: a `trace()`/`traced` inside an active run does not start a new run. It adds a marker so the region can
-  be found in the viewer.
+- Nesting: a `trace()`/`traced` inside an active run does not start a new run. It writes a `region` row (name, the
+  innermost traced call where it started, `seq` start and end) when it exits, and the run inspector lists the
+  regions with a link to their call. A region still open when the process dies is not recorded.
 - `traced` on an `async def` function is Later (FR-CAP-12).
 
 ### pytest plugin (FR-RUN-4)
