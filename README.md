@@ -3,6 +3,8 @@
 Observe what a Python program really does while it runs and explore it as an interactive, hierarchical graph.
 The graph comes from runtime evidence, not from a model's guess about the code.
 
+![A failed run on the overview: the stage where it stopped, the stage a passing run reached and this one didn't, and the locals where it failed](https://raw.githubusercontent.com/DatzinDev/VizControl/main/docs/img/overview.png)
+
 ```
 pip install vizcontrol
 vizcontrol run --serve app.py --flag # trace app.py, then open the run in the browser
