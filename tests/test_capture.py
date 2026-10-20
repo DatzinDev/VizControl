@@ -267,6 +267,32 @@ def test_generators_dropped_while_suspended_are_all_written(tmp_path):
     assert len(by_name(r, "pair")) == 50
 
 
+class Loud(Exception):
+    called = False
+
+    def __str__(self):
+        Loud.called = True  # the project's own code: never run by the tracer
+        return "loud"
+
+
+def fail_two_ways():
+    import subprocess
+
+    for exc in (subprocess.CalledProcessError(2, ["make", "all"]), Loud(["not", "simple"])):
+        try:
+            raise exc
+        except Exception:
+            pass
+
+
+def test_messages_come_from_library_str_but_never_the_project_s(tmp_path):
+    with vizcontrol.trace(output=tmp_path / "msg.vizc") as t:
+        fail_two_ways()
+    messages = {e["type"]: e["message"] for e in Reader(t.path).exceptions()}
+    assert messages["subprocess.CalledProcessError"] == "Command '['make', 'all']' returned non-zero exit status 2."
+    assert messages["test_capture.Loud"] == "list" and not Loud.called
+
+
 def find_all(items, x):
     found, i = [], 0
     while True:
