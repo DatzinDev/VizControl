@@ -1,0 +1,34 @@
+version: 2
+# Security updates arrive as soon as an advisory exists; version updates are weekly, grouped, and wait a week
+# after a release (cooldown) so a compromised fresh release is likely yanked before it reaches this repo.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      python:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      frontend:
+        patterns: ["*"]
+        update-types: [minor, patch]
