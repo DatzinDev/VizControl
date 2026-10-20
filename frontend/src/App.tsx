@@ -166,8 +166,10 @@ export function App() {
     setRunId(id);
   };
 
-  /** Open what the URL asked for; without anything, a run opens on its failure (FR-VIZ-8) or its overview. */
-  const applyPending = useCallback((err: ErrorPath | null) => {
+  /** Open what the URL asked for; without anything, a run opens on its failure (FR-VIZ-8) or its overview, or on
+   * its one stage of the project's own (a package staged as one: its modules say more than a single box). */
+  const applyPending = useCallback((err: ErrorPath | null, g?: StageGraph) => {
+    const own = g?.nodes.filter((n) => n.observed) ?? [];
     const h = pending.current;
     pending.current = null;
     if (h?.map) goMap();
@@ -176,6 +178,7 @@ export function App() {
     else if (h?.stage) goStage(h.stage);
     else if (h?.call != null) goCall(h.call);
     else if (err) goCall(err.origin.id);
+    else if (own.length === 1) goStage(own[0].name);
     else goOverview();
   }, [goMap, goDiff, goFollow, goStage, goCall, goOverview]);
 
@@ -211,7 +214,7 @@ export function App() {
       setStages(g);
       setError(err);
       setLoadedRun(runId);
-      applyPending(err);
+      applyPending(err, g);
     }).catch((e) => setProblem(String(e)));
     return () => {
       live = false;
