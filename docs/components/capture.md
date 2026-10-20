@@ -166,6 +166,9 @@ their own flushes or at stop.
 The worst case is pure per-call bookkeeping in Python. A C accelerator for the hot callbacks is the upgrade path
 if it matters.
 
+At scale (a 250k-iteration loop of tiny functions, `values` level): 893k calls and 2.3M bindings in 17.7 s (the
+program alone takes 0.3 s), 33 MB of memory, a 381 MB `.vizc` file.
+
 ## Config knobs
 
 `level`, `include`, `exclude`, `opaque_calls`, `threads`, `limits.max_calls`, `limits.max_depth`,

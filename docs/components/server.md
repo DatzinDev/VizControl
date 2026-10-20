@@ -56,6 +56,20 @@ All responses are JSON. Lists are paged with `offset`/`limit`. Fields derived by
 Previews: list endpoints never inline full values. Each binding returns a one-line `preview` (≤ 120 chars,
 computed from the stored value tree) plus `value_id` for lazy loading.
 
+## Measured at scale
+
+The 893k-call run above (Python 3.13, x86-64 laptop):
+
+| Request | First time | Cached |
+|---|---|---|
+| `/stages`, `/stage`, `/mermaid` | 2.1–2.8 s (one pass over all calls) | instant |
+| `/tree`, `/calls/{id}`, `/path`, `/error`, `/map` | < 10 ms | |
+| `/objects` | 0.8 s | |
+| `/search` | 0.3 s | |
+
+The server's memory peaks at about 700 MB during the first pass. In the browser the overview draws in 2.9 s and
+revealing a call 500k calls deep takes 1.8 s: the loop folds into `×N` groups and only the opened path loads.
+
 ## Limits and failure modes
 
 - Single user and local. No authentication in v1. The `--host` warning is the guard.
