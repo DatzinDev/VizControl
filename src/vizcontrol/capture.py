@@ -587,6 +587,11 @@ class Tracer:
                 rec = self._pop(stack, fid)
                 if rec is None:
                     return
+            gone = self._suspended.get(fid)
+            if gone is not None and gone is not rec and gone.id is not None:
+                # a generator dropped while suspended outside any try block is closed with no event (3.12+): its
+                # frame's id now belongs to this one, so its record is written now, or never
+                self._end(gone, None, None, "unfinished", None, 1)
             self._suspended[fid] = rec  # stays open; PY_RESUME pushes it back
             top = stack[-1] if stack else None  # back in the code that consumed it (or the event loop)
             CALLER.set((top.id, top.depth, self) if top is not None and top.id is not None else None)
