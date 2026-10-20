@@ -37,8 +37,33 @@ const nodeCenter = (label) =>
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   }, label);
 
-await check("a passing run opens on the stage overview", async () => {
+await check("a run opens in Replay and steps through who called whom", async () => {
   await page.goto(`${base}#run=basic.vizc`, { waitUntil: "networkidle0" });
+  await wait(1500);
+  expect((await text(".level")) === "Replay", `level is ${await text(".level")}`);
+  expect((await page.$$(".transcript .line")).length >= 5, "no transcript");
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight");
+  await wait(800);
+  expect((await text(".watch .label")) === "Step 4", `at ${await text(".watch .label")}`);
+  expect((await page.$$(".stack-row")).length >= 2, "no call stack");
+  expect((await page.$$(".fn.current")).length === 1, "the current function is not lit on the graph");
+});
+
+await check("a failed run replays from where it raised, and a watch follows a variable", async () => {
+  await page.goto(`${base}#run=vip.vizc`, { waitUntil: "networkidle0" });
+  await page.reload({ waitUntil: "networkidle0" });
+  await wait(1500);
+  expect((await text(".now-line")).includes("raised ValueError"), `now: ${await text(".now-line")}`);
+  expect((await page.$$(".fn.failed")).length === 1, "the failing function is not marked");
+  await page.type(".watch-add input", "rule");
+  await page.keyboard.press("Enter");
+  await wait(800);
+  const row = await text(".watch-row");
+  expect(row.includes("rule") && row.includes("pct"), `watch: ${row}`);
+});
+
+await check("a passing run opens on the stage overview", async () => {
+  await page.goto(`${base}#run=basic.vizc&view=overview`, { waitUntil: "networkidle0" });
   await wait(800);
   expect((await text(".level")) === "L1 · Overview", `level is ${await text(".level")}`);
   expect((await page.$$(".stage")).length >= 5, "fewer than 5 stages");
@@ -92,7 +117,7 @@ await check("browser back and forward walk the levels", async () => {
 });
 
 await check("a failed run opens on its failure with the cause", async () => {
-  await page.goto(`${base}#run=vip.vizc`, { waitUntil: "networkidle0" });
+  await page.goto(`${base}#run=vip.vizc&view=overview`, { waitUntil: "networkidle0" });
   await page.reload({ waitUntil: "networkidle0" });
   await wait(1500);
   expect((await text(".level")) === "L3 · Failure", `level is ${await text(".level")}`);
@@ -197,7 +222,7 @@ await check("the map joins all runs and shows each run's route", async () => {
 });
 
 await check("a failed run's overview marks where it stopped and what it never reached", async () => {
-  await page.goto(`${base}#run=vip.vizc`, { waitUntil: "networkidle0" });
+  await page.goto(`${base}#run=vip.vizc&view=overview`, { waitUntil: "networkidle0" });
   await page.reload({ waitUntil: "networkidle0" });
   await wait(1200);
   expect((await text(".banner")).includes("compare with checkout.py basic"), "the failure banner offers no comparison");
@@ -214,11 +239,11 @@ await check("a failed run's overview marks where it stopped and what it never re
 });
 
 if (flatBase) await check("a one-file project is staged by its functions, and its failure shows what it never reached", async () => {
-  await page.goto(`${flatBase}#run=ok.vizc`, { waitUntil: "networkidle0" });
+  await page.goto(`${flatBase}#run=ok.vizc&view=overview`, { waitUntil: "networkidle0" });
   await wait(1200);
   const names = await page.$$eval(".stage .name", (ns) => ns.map((n) => n.textContent));
   expect(["read", "clean", "enrich", "summarize"].every((s) => names.includes(s)), `stages: ${names.join(", ")}`);
-  await page.goto(`${flatBase}#run=bad.vizc`, { waitUntil: "networkidle0" });
+  await page.goto(`${flatBase}#run=bad.vizc&view=overview`, { waitUntil: "networkidle0" });
   await page.reload({ waitUntil: "networkidle0" });
   await wait(1200);
   await page.$$eval(".crumbs button", (bs) => bs[0].click());
@@ -229,7 +254,7 @@ if (flatBase) await check("a one-file project is staged by its functions, and it
 });
 
 if (bigBase) await check("a package of many modules is one stage, opened on its modules", async () => {
-  await page.goto(`${bigBase}#run=main.vizc`, { waitUntil: "networkidle0" });
+  await page.goto(`${bigBase}#run=main.vizc&view=overview`, { waitUntil: "networkidle0" });
   await wait(1200);
   const names = await page.$$eval(".stage .name", (ns) => ns.map((n) => n.textContent));
   expect(names.includes("big") && !names.some((n) => n.startsWith("big.")), `stages: ${names.join(", ")}`);

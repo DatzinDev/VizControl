@@ -15,6 +15,10 @@ vizcontrol diagram <run>.vizc         # the run's stages as a Mermaid flowchart
 vizcontrol diff <a>.vizc <b>.vizc     # where two runs split and which results differ
 ```
 
+A run opens as a recording: the call graph lights up step by step, a transcript says who called whom with what and
+what came back, and Watch follows the variables you pick, like a debugger after the fact. Try
+`vizcontrol run --serve examples/etl.py --bad`.
+
 Start with [Understanding a project you didn't write](https://github.com/DatzinDev/VizControl/blob/main/docs/guide.md),
 or the [demo](https://github.com/DatzinDev/VizControl/tree/main/examples/demo): a small project traced three ways
 (a build that works, one that fails, its tests) with a tour of what the viewer shows.

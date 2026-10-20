@@ -12,6 +12,7 @@ lays out, renders and navigates. Visual concept: [UI design](../ui-design.md).
 
 | Done | Pending |
 |---|---|
+| Replay, the view a run opens in: the call graph lights up as the recording plays (functions already run, the call stack, the current function; red where it raised), a transcript says each step (`→ clean(row=…)`, `← clean returned …`, `✗ to_usd raised KeyError`), and a scrubber plays, steps (← →, space) and jumps (raise marks, a function's first call, a stack frame). On the right: the step's values (click to inspect), watched variables with their value at that point and "Δ now" when it changes, and the call stack. A failed run opens on the step where it raised; in a graph of more than 30 functions the camera follows the current one | Step over / step out; per-line steps |
 | Shell (top bar, breadcrumbs, runs/stages/filters panel, inspector), dark and light themes from the Penpot tokens | Timeline strip |
 | Level 1 stage graph with main path. Double-click (or the stage list) opens the stage at Level 2. "Copy as Mermaid" on Level 1 and 2 | Moving between levels without animated zoom |
 | Level 2: the stage as module › class › function boxes (elk compound layout, top to bottom), neighbouring stages collapsed around it (the standard library left out, as on Level 1); a function opens its first call, a collapsed stage opens that stage. A stage of more than 40 functions opens on its modules, closed, with the calls between them; a click opens or closes one | |

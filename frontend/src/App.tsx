@@ -8,21 +8,22 @@ import { DiffInspector, DiffPicker, DiffView } from "./DiffView";
 import { ms, outcomeIcon, runLabel, shortName } from "./format";
 import { CallInspector, ComponentInspector, ObjectInspector, RunInspector, StageInspector, ValueInspector } from "./Inspector";
 import { ghostsOf, MapInspector, referenceFor } from "./MapView";
+import { ReplayView } from "./ReplayView";
 import { SearchPalette } from "./SearchPalette";
 import { StageView } from "./StageView";
 import { callKey, Item, Key, useCallTree } from "./useCallTree";
 
-type View = "stages" | "stage" | "calls" | "flow" | "diff" | "map";
+type View = "replay" | "stages" | "stage" | "calls" | "flow" | "diff" | "map";
 type Selection = { kind: "stage"; name: string } | { kind: "call"; id: number } | null;
 
-type Wanted = { run: string | null; call: number | null; obj: number | null; stage: string | null; flow: boolean; vs: string | null; diff: boolean; map: boolean };
-const nothing: Wanted = { run: null, call: null, obj: null, stage: null, flow: false, vs: null, diff: false, map: false };
+type Wanted = { run: string | null; call: number | null; obj: number | null; stage: string | null; flow: boolean; vs: string | null; diff: boolean; map: boolean; overview: boolean };
+const nothing: Wanted = { run: null, call: null, obj: null, stage: null, flow: false, vs: null, diff: false, map: false, overview: false };
 
 function readHash(): Wanted {
   const p = new URLSearchParams(location.hash.slice(1));
   const num = (k: string) => (p.get(k) ? Number(p.get(k)) : null);
   return { run: p.get("run"), call: num("call"), obj: num("obj"), stage: p.get("stage"), flow: p.get("view") === "flow",
-    vs: p.get("vs"), diff: p.get("view") === "diff", map: p.get("view") === "map" };
+    vs: p.get("vs"), diff: p.get("view") === "diff", map: p.get("view") === "map", overview: p.get("view") === "overview" };
 }
 
 // Back/forward: a user navigation first duplicates the current history entry, then the hash effect replaces the
@@ -36,7 +37,8 @@ export function App() {
   const [runsLoaded, setRunsLoaded] = useState(false);
   const [runId, setRunId] = useState<string | null>(initial.run);
   const [loadedRun, setLoadedRun] = useState<string | null>(null);  // the URL follows the state only once a run has loaded
-  const [view, setView] = useState<View>("stages");
+  const [view, setView] = useState<View>("replay");
+  const [replayEnd, setReplayEnd] = useState<number | undefined>(undefined);  // replay from where this call ended
   const [stages, setStages] = useState<StageGraph | null>(null);
   const [error, setError] = useState<ErrorPath | null | undefined>(undefined);
   const [selection, setSelection] = useState<Selection>(null);
@@ -168,8 +170,16 @@ export function App() {
     setRunId(id);
   };
 
-  /** Open what the URL asked for; without anything, a run opens on its failure (FR-VIZ-8) or its overview, or on
-   * its one stage of the project's own (a package staged as one: its modules say more than a single box). */
+  const goReplay = useCallback((endOf?: number) => {
+    setReplayEnd(endOf);
+    setSelection(null);
+    setValue(null);
+    setView("replay");
+  }, []);
+
+  /** Open what the URL asked for; without anything, a run opens in Replay, on its failure if it failed (FR-VIZ-8).
+   * The overview (view=overview) opens on the failure, its overview, or its one stage of the project's own (a
+   * package staged as one: its modules say more than a single box). */
   const applyPending = useCallback((err: ErrorPath | null, g?: StageGraph) => {
     const own = g?.nodes.filter((n) => n.observed) ?? [];
     const h = pending.current;
@@ -179,10 +189,11 @@ export function App() {
     else if (h?.obj != null || h?.flow) goFollow(h.obj);
     else if (h?.stage) goStage(h.stage);
     else if (h?.call != null) goCall(h.call);
+    else if (!h?.overview) goReplay(err?.origin.id);
     else if (err) goCall(err.origin.id);
     else if (own.length === 1) goStage(own[0].name);
     else goOverview();
-  }, [goMap, goDiff, goFollow, goStage, goCall, goOverview]);
+  }, [goMap, goDiff, goFollow, goStage, goCall, goOverview, goReplay]);
 
   useEffect(() => {
     setFlow(null);
@@ -229,6 +240,8 @@ export function App() {
     const p = new URLSearchParams();
     if (runId) p.set("run", runId);
     if (view === "map") p.set("view", "map");
+    else if (view === "replay") p.set("view", "replay");
+    else if (view === "stages") p.set("view", "overview");
     else if (view === "diff") p.set(compareWith ? "vs" : "view", compareWith ?? "diff");
     else if (view === "flow") p.set(followed != null ? "obj" : "view", followed != null ? String(followed) : "flow");
     else if (view === "stage" && openStage) p.set("stage", openStage);
@@ -291,7 +304,7 @@ export function App() {
   const selectedCall: CallNode | undefined =
     selection?.kind === "call" ? tree.callItem(callKey(selection.id)) ?? error?.path.find((c) => c.id === selection.id) : undefined;
   const isFailureView = view === "calls" && selection?.kind === "call" && error?.origin.id === selection.id;
-  const level = view === "map" ? "Map · all runs" : view === "diff" ? "Diff" : view === "flow" ? "Data Flow" : view === "stage" ? "L2 · Components" : value ? "L4 · Value" : view === "stages" ? "L1 · Overview" : isFailureView ? "L3 · Failure" : selection ? "L3 · Function" : "L3 · Calls";
+  const level = view === "replay" ? "Replay" : view === "map" ? "Map · all runs" : view === "diff" ? "Diff" : view === "flow" ? "Data Flow" : view === "stage" ? "L2 · Components" : value ? "L4 · Value" : view === "stages" ? "L1 · Overview" : isFailureView ? "L3 · Failure" : selection ? "L3 · Function" : "L3 · Calls";
 
   const crumbs: { label: string; onClick?: () => void }[] = [{ label: "Run", onClick: toOverview }];
   if (run) crumbs.push({ label: runLabel(run), onClick: toOverview });
@@ -325,7 +338,9 @@ export function App() {
           </div>
         )}
         <div className="tabs" role="tablist">
-          <button className={view !== "flow" && view !== "diff" && view !== "map" ? "active" : ""} onClick={() => { push(); setView(selection?.kind === "call" ? "calls" : openStage ? "stage" : "stages"); }}>Execution Flow</button>
+          <button className={view === "replay" ? "active" : ""} onClick={() => { if (runId) { push(); goReplay(); } }}
+            title="The run as a recording: who called whom, with what, step by step">Replay</button>
+          <button className={view === "stages" || view === "stage" || view === "calls" ? "active" : ""} onClick={() => { push(); setView(selection?.kind === "call" ? "calls" : openStage ? "stage" : "stages"); }}>Execution Flow</button>
           <button className={view === "flow" ? "active" : ""} onClick={() => runId && follow(value?.object_id ?? followed)}
             title="Follow one object across calls">Data Flow</button>
           <button className={view === "diff" ? "active" : ""} onClick={() => { if (runId) { push(); goDiff(compareWith); } }} title="Compare this run with another">Diff</button>
@@ -361,7 +376,7 @@ export function App() {
             </button>
           ))}
           {!runs.length && <div className="muted">No runs. Try <span className="mono">vizcontrol run app.py</span></div>}
-          {stages && (
+          {stages && view !== "replay" && (
             <>
               <div className="label" style={{ marginTop: 8 }}>Stages</div>
               {stages.nodes.filter((s) => showStdlib || !s.stdlib || s.raised).map((s) => (
@@ -377,6 +392,7 @@ export function App() {
               ))}
             </>
           )}
+          {view !== "replay" && <>
           <div className="label" style={{ marginTop: 8 }}>Filters</div>
           {error && (
             <label className="toggle"><input type="checkbox" checked={focusError} onChange={(e) => setFocusError(e.target.checked)} />Dim calls off the error path</label>
@@ -390,8 +406,10 @@ export function App() {
             </select>
           </label>
           <div className="muted" style={{ fontSize: 11 }}>Filtered calls fold into "hidden (N)". The selection and the error path always show.</div>
+          </>}
         </aside>
 
+        {view === "replay" && runId ? <ReplayView key={runId} runId={runId} endOf={replayEnd} onFollow={follow} /> : <>
         <section className="canvas">
           {problem && <div className="empty raised">{problem}</div>}
           {!problem && runsLoaded && !runs.length && (
@@ -530,6 +548,7 @@ export function App() {
           )}
           </>}
         </aside>
+        </>}
       </div>
 
       {searching && runId && <SearchPalette run={runId} onPick={openCall} onClose={() => setSearching(false)} />}
