@@ -236,6 +236,10 @@ class Tracer:
             return cid
         cid = None
         if self._included(code.co_filename, module):
+            if not isinstance(module, str):  # templates compiled to Python (Jinja): named after their path
+                path = os.path.abspath(code.co_filename)
+                root = next((r for r in self._roots if path.startswith(r)), None)
+                module = os.path.splitext(path[len(root):])[0].replace(os.sep, ".") if root else None
             cid = self.w.new_id("code")
             self.w.add("code", (cid, self._file_id(code.co_filename), module, code.co_qualname,
                                 code.co_firstlineno, _code_kind(code), 1))
