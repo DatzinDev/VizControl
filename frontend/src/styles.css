@@ -177,6 +177,12 @@ button.oid:hover { outline: 1px solid var(--flow); }
 .back { color: var(--muted); font-size: 12px; align-self: flex-start; }
 .back:hover { color: var(--accent); }
 
+/* source panel */
+.source-panel { width: min(960px, 94vw); display: flex; flex-direction: column; max-height: 76vh; }
+.source-panel .head { display: flex; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.source-panel pre { overflow: auto; padding: 10px 14px; font-size: 12px; }
+.source-panel .ln { width: 5ch; }
+
 /* search palette */
 .palette-bg { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); display: grid; justify-items: center; align-items: start; padding-top: 12vh; z-index: 50; }
 .palette { width: min(640px, 92vw); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
