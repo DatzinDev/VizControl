@@ -350,6 +350,7 @@ export function App() {
             <button key={r.id} className={`run-row ${r.id === runId ? "active" : ""}`} onClick={() => { push(); pending.current = view === "map" ? { ...nothing, run: r.id, map: true } : null; setRunId(r.id); }} title={r.id}>
               <span className={r.error ? "muted" : r.outcome} style={{ fontSize: 10 }}>{r.error ? "?" : outcomeIcon[r.outcome]}</span>
               <span className="name">{runLabel(r)}</span>
+              {r.http_status && <span className={Number(r.http_status) >= 500 ? "raised mono" : "muted mono"} style={{ fontSize: 11 }}>{r.http_status}</span>}
               <span className="muted" style={{ fontSize: 11 }}>{ms(r.duration_ns)}</span>
             </button>
           ))}
