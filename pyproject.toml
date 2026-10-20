@@ -18,3 +18,14 @@ dev = ["pytest>=8"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.hatch.build]
+# the built viewer is git-ignored but must ship in the wheel
+artifacts = ["src/vizcontrol/viewer/static/**"]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "frontend/src", "frontend/*.json", "frontend/*.ts", "frontend/index.html", "hatch_build.py",
+           "README.md", "docs"]
