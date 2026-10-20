@@ -22,7 +22,7 @@ def stage_detail(reader, stage: str) -> StageDetail | None                      
 def error_path(reader) -> ErrorPath | None                                                # FR-ANA-5
 def object_flow(reader, object_id: int) -> ObjectFlow                                     # FR-ANA-4/6
 def value_diff(a: dict, b: dict) -> list[Change]                                          # FR-ANA-6
-def compare(reader_a, reader_b) -> RunDiff                                                # FR-ANA-7
+def compare(reader_a, reader_b) -> RunDiff  # GET /api/compare                          # FR-ANA-7
 def search(reader, query: str) -> list[Hit]                                               # FR-ANA-8
 ```
 
@@ -113,14 +113,20 @@ scans the value table; an oid index written at capture is the upgrade if that ge
 `value_diff` compares two value trees by path and returns `added`, `removed` and `changed` entries
 (`path`, `before`, `after`). Truncated subtrees compare as "unknown", never as "equal".
 
-### Run comparison (FR-ANA-7, Later)
+### Run comparison (FR-ANA-7)
 
-- Build each run's pre-order signature: `(depth, module, qualname, outcome)` per call, after aggregation.
-- Align with `difflib.SequenceMatcher`. The first non-`equal` opcode is the **divergence point**.
-- Report its parent call in both runs, with argument differences (`value_diff` on the parent's args) and the
-  `call_line`s where the children start to differ, which points at the branch that decided the path. With
-  per-line capture on that parent, the differing line sequences are reported too.
-- Also returned: subtrees only in A, only in B, and matched calls whose return values differ.
+- Each run's calls in pre-order (seq order) as `(depth, module, qualname)`. Outcomes are left out: a failing run's
+  callers all raise and are still the same calls.
+- The first divergence is where the common prefix ends, found in linear time. `difflib.SequenceMatcher` only
+  aligns the middle, between the common prefix and suffix, capped at 5,000 calls per side, for the extent of that
+  first block and the counts (`summary.truncated` says when the cap applied). A full `difflib` pass took 60 s on a
+  repetitive 262k-call run; this takes about 1 s.
+- The divergence's parent: of the parents of the first differing call on each side, the deeper one. That is where
+  execution split; a shallower difference is usually its consequence (B raised, so it never reached the repo).
+- Reported: the parent and its ancestors (paired, A and B), the parent's children only in A and only in B with
+  their `call_line`, the parent's argument differences (`value_diff`), and the source lines around those call lines
+  (usually the branch that decided).
+- Later: matched calls whose return values differ, and aggregation of repeated siblings before aligning.
 
 ### Search (FR-ANA-8)
 
