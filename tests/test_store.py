@@ -1,5 +1,6 @@
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 
@@ -94,3 +95,16 @@ def test_a_run_whose_writer_died_reads_as_unfinished(tmp_path):
         assert outcome() == ("unfinished", True)
     w.close("ok", 0, 1, [])
     assert outcome() == ("ok", False)  # a closed run is never second-guessed
+
+
+def test_a_format_1_0_file_still_reads(tmp_path):
+    w = Writer(tmp_path / "old.vizc", RUN)
+    write_tree(w)
+    w.close("ok", 0, 40, [])
+    db = sqlite3.connect(tmp_path / "old.vizc")
+    db.execute("DROP TABLE region")
+    db.execute("UPDATE meta SET value = '1.0' WHERE key = 'format_version'")
+    db.commit()
+    db.close()
+    r = Reader(tmp_path / "old.vizc")
+    assert r.counts()["region"] == 0 and r.counts()["call"] == 2 and r.regions() == []
