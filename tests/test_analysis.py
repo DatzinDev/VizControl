@@ -165,11 +165,29 @@ def test_stage_times_hold_with_recursion_and_with_calls_left_open(tmp_path):
     [outer] = [c for c in r.all_calls() if c[1] is None]
     assert down["calls"] == 6 and down["total_ns"] == outer[3] - outer[2]  # the outermost call, not six nested
     with vizcontrol.trace(output=tmp_path / "cut.vizc", limits={"max_calls": 5}) as t:
-        countdown(20)
+        left_open()
     r = Reader(t.path)
     assert r.run()["truncated"] == ["limit_calls"]
-    root = A.stages(r)["nodes"][0]  # every call still open: each ran at least until the run ended
-    assert root["total_ns"] >= r.run()["ended_ns"] - r.run()["started_ns"] - 10_000_000
+    g = A.stages(r)
+    run = g["nodes"][0]["total_ns"]  # left_open() is cut open: it lasts as long as what was seen inside it
+    assert 20_000_000 <= run < r.run()["ended_ns"] - r.run()["started_ns"]
+    assert {n["name"]: n for n in g["nodes"]}["numbers"]["total_ns"] < 20_000_000  # an abandoned generator
+
+
+def numbers():
+    yield 1
+    yield 2
+
+
+def left_open():
+    import time
+
+    g = numbers()
+    next(g)  # never resumed: the generator call stays open
+    time.sleep(0.03)
+    countdown(1)  # past max_calls: tracing stops in here
+    time.sleep(0.03)
+    return g
 
 
 def scale(rows, k):
