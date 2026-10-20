@@ -150,6 +150,28 @@ def test_a_stage_reentered_below_itself_counts_its_time_once(tmp_path):
     assert nodes["ping"]["total_ns"] <= run and nodes["pong"]["total_ns"] <= nodes["ping"]["total_ns"]
 
 
+def countdown(n):
+    return countdown(n - 1) if n else bounce()
+
+
+def test_stage_times_hold_with_recursion_and_with_calls_left_open(tmp_path):
+    with vizcontrol.trace(output=tmp_path / "down.vizc") as t:
+        countdown(5)
+    r = Reader(t.path)
+    g = A.stages(r)
+    for n in g["nodes"]:
+        assert A.stage_detail(r, n["name"])["stats"]["total_ns"] == n["total_ns"]  # Level 2 agrees with Level 1
+    [down] = [f for f in A.stage_detail(r, g["nodes"][0]["name"])["functions"] if f["qualname"] == "countdown"]
+    [outer] = [c for c in r.all_calls() if c[1] is None]
+    assert down["calls"] == 6 and down["total_ns"] == outer[3] - outer[2]  # the outermost call, not six nested
+    with vizcontrol.trace(output=tmp_path / "cut.vizc", limits={"max_calls": 5}) as t:
+        countdown(20)
+    r = Reader(t.path)
+    assert r.run()["truncated"] == ["limit_calls"]
+    root = A.stages(r)["nodes"][0]  # every call still open: each ran at least until the run ended
+    assert root["total_ns"] >= r.run()["ended_ns"] - r.run()["started_ns"] - 10_000_000
+
+
 def scale(rows, k):
     return [{"n": r["n"] * k} for r in rows]
 
