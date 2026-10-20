@@ -1,61 +1,83 @@
 name: Release
 
-# A tag vX.Y.Z publishes to TestPyPI, checks that release installs and works, then publishes to PyPI.
-# A manual run (workflow_dispatch) is a dry run: it stops after TestPyPI.
+# A tag vX.Y.Z on a commit of main publishes to TestPyPI, checks that release installs and works, then publishes to
+# PyPI (environment `pypi`, which requires a maintainer's approval). A manual run on main is a dry run that stops
+# after TestPyPI. Publishing uses Trusted Publishing (OIDC): there are no PyPI tokens anywhere.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   build:
+    name: build and check distributions
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0  # no major tags upstream: pin the release
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # to check the tag is on main
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v7
+          enable-cache: false  # no caches in the release path: nothing a PR could have poisoned
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: 22
-      - name: tag matches __version__
+          package-manager-cache: false  # setup-node v7 caches by default; never in the release path
+      - name: the tag matches __version__ and points to a commit on main
         if: github.ref_type == 'tag'
         run: |
           version=$(grep -Po '__version__ = "\K[^"]+' src/vizcontrol/__init__.py)
           test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match __version__ $version"; exit 1; }
-      - run: uv build
-      - run: uvx twine check --strict dist/*
-      - uses: actions/upload-artifact@v7
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "tag $GITHUB_REF_NAME is not on main"; exit 1; }
+      - run: uv build  # the build hook runs `npm ci --ignore-scripts` from the lockfile
+      - run: uvx twine@7.0.0 check --strict dist/*
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: dist
           path: dist/
+          if-no-files-found: error
 
   testpypi:
+    name: publish to TestPyPI
     needs: build
     runs-on: ubuntu-latest
     environment:
       name: testpypi
       url: https://test.pypi.org/p/vizcontrol
     permissions:
-      id-token: write  # trusted publishing, no tokens
+      id-token: write  # OIDC for Trusted Publishing; only the publishing jobs get it
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: dist
           path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.2
         with:
           repository-url: https://test.pypi.org/legacy/
           skip-existing: true  # a dry run may already have uploaded this version
 
   verify:
+    name: install from TestPyPI and smoke test
     needs: testpypi
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0  # no major tags upstream: pin the release
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
         with:
           python-version: "3.12"
+          enable-cache: false
       - name: install from TestPyPI and trace the sample app
         run: |
           version=$(grep -Po '__version__ = "\K[^"]+' src/vizcontrol/__init__.py)
@@ -70,6 +92,7 @@ jobs:
           /tmp/fromindex/bin/vizcontrol info /tmp/vip.vizc | grep -q "escaped   ValueError"
 
   pypi:
+    name: publish to PyPI
     needs: verify
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
@@ -77,10 +100,10 @@ jobs:
       name: pypi
       url: https://pypi.org/p/vizcontrol
     permissions:
-      id-token: write
+      id-token: write  # OIDC for Trusted Publishing
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: dist
           path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.2

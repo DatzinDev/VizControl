@@ -5,6 +5,15 @@ on:
     branches: [main]
   pull_request:
 
+# Read-only token for every job. CI never publishes and has no secrets (pull_request from forks gets none anyway).
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Third-party actions are pinned to full commit SHAs (the comment is the release; Dependabot keeps both in sync).
 jobs:
   python:
     name: tests (Python ${{ matrix.python }})
@@ -14,27 +23,39 @@ jobs:
       matrix:
         python: ["3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0  # no major tags upstream: pin the release
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
         with:
           python-version: ${{ matrix.python }}
       - run: uv sync --locked
+      - run: uv run ruff check .
       - run: uv run pytest -q
+      - name: audit Python dependencies
+        if: matrix.python == '3.12'
+        run: |
+          uv export --locked --format requirements-txt --no-emit-project -o requirements-audit.txt
+          uvx pip-audit@2.10.1 --strict --disable-pip -r requirements-audit.txt
 
   viewer:
     name: viewer (typecheck, build, e2e)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0  # no major tags upstream: pin the release
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
         with:
           python-version: "3.13"
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
+      - run: npm ci --ignore-scripts
+        working-directory: frontend
+      - run: npm audit --audit-level=high
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
@@ -46,14 +67,17 @@ jobs:
     name: wheel (built viewer inside, installs clean)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0  # no major tags upstream: pin the release
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: 22
       - run: uv build
+      - run: uvx twine@7.0.0 check --strict dist/*
       - name: install the wheel in a clean venv and trace the sample app
         run: |
           uv venv /tmp/clean
