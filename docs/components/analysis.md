@@ -44,13 +44,23 @@ drops them when the file's mtime changes. Nothing is written back into `.vizc` f
 
 ### Stages, Level 1 (FR-ANA-2)
 
-A stage is a set of modules. Assignment, first match wins:
+A stage is a set of modules, or the calls below a head function. `Stager` assigns them, first match wins:
 
 1. User rules: `[tool.vizcontrol.stages]` maps a stage name to module globs, e.g.
    `API = ["app.api.*"]`, `Service = ["app.services.*"]`, `Persistence = ["app.repo.*", "sqlalchemy.*"]`.
+   A glob with a colon matches `module:qualname` and makes a head function: `Load = ["etl:load_*"]`.
 2. Default: the module path truncated to `stage_depth` components below the project root (default 2:
    `app.services.orders` → `app.services`). Opaque calls group under their top-level package (`sqlalchemy`,
    `requests`) and the stage is marked not observed inside.
+3. Flat projects: with no function rules and fewer than 3 observed module stages, a one-file script would be one
+   stage. Then the entry's module stage is split: from the root calls, a chain of lone callees (`main()` →
+   `run()`) stays the entry, and the functions the chain first fans out to (two or more) become head functions,
+   one stage each, named by qualname (`extract`, `transform`, `load`).
+
+A head's stage takes every call below it that is in the head's own module stage, even through library calls
+(callbacks); calls in other modules keep their module stage. Heads are code objects, found from the distinct
+caller → callee code pairs, so assigning a stage to one call needs its ancestors (`Stager.of`, `head_of`), and a
+full pass needs only the parent's head (`Stager.assign`).
 
 `StageGraph`: one node per stage (call count, total time of the calls entering it, self time, raised/unfinished
 counts, first `seq`, modules, observed) and one edge per caller-stage → callee-stage pair (calls, time, first

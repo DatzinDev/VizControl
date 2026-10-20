@@ -106,11 +106,11 @@ def _bindings(r: Reader, call_id: int) -> list[dict]:
             for b in r.bindings(call_id)]
 
 
-def _call(r: Reader, call_id: int, stage_of) -> dict:
+def _call(r: Reader, call_id: int, stager: A.Stager) -> dict:
     c = r.call(call_id)
     if c is None:
         raise NotFound(f"no call {call_id}")
-    node = A.call_node(c, stage_of(c["module"], c["observed"]))
+    node = A.call_node(c, stager.of(r, c))
     node["file_id"] = c["file_id"]
     node["caller"] = None
     if c["parent_id"] is not None:
@@ -142,7 +142,6 @@ def api(runs: Runs, path: str, q: dict):
         raise NotFound(path)
     run_id, rest = unquote(m.group(1)), m.group(2) or ""
     r = runs.reader(run_id)
-    stage_of = A.stage_namer(r.run()["config"])
     if rest == "":
         return {**_summary(runs, run_id), "run": r.run(), "counts": r.counts()}
     if rest == "/stages":
@@ -157,7 +156,8 @@ def api(runs: Runs, path: str, q: dict):
         offset, limit = _int(q, "offset", 0, 0, 1 << 62), _int(q, "limit", 200, 1, 1000)
         if code is not None:
             return A.group_members(r, node, code, offset, limit)
-        return A.subtree(r, node, _int(q, "depth", 1, 1, 4), limit, stage_of)
+        stager = runs.cached(run_id, A.Stager)
+        return A.subtree(r, node, _int(q, "depth", 1, 1, 4), limit, stager, stager.head_of(r, node))
     if rest == "/error":
         return runs.cached(run_id, A.error_path)
     if rest == "/search":
@@ -169,11 +169,12 @@ def api(runs: Runs, path: str, q: dict):
         raise NotFound(path)
     kind, ident, sub = m.group(1), int(m.group(2)), m.group(3)
     if kind == "calls" and sub is None:
-        return _call(r, ident, stage_of)
+        return _call(r, ident, runs.cached(run_id, A.Stager))
     if kind == "calls" and sub == "/bindings":
         return _bindings(r, ident)
     if kind == "calls" and sub == "/path":
-        return [A.call_node(c, stage_of(c["module"], c["observed"])) for c in r.ancestors(ident)]
+        path = r.ancestors(ident)
+        return [A.call_node(c, s) for c, s in zip(path, runs.cached(run_id, A.Stager).path(path), strict=True)]
     if sub is None and kind == "values":
         v = r.value(ident)
         if v is None:
