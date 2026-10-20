@@ -6,9 +6,9 @@ The trace format and APIs are designed so none of them needs a breaking change.
 
 | # | Item | Builds on | Notes |
 |---|---|---|---|
-| 1 | pytest plugin, if not finished in v1 (FR-RUN-4) | runners | One run per test, assertion as failure point. |
-| 2 | Data Flow view and object evolution (FR-ANA-4/6, FR-VIZ-10) | analysis, viewer | Needs the `state` level for exact attribution. |
-| 3 | Run comparison (FR-ANA-7, FR-VIZ-11) | analysis.compare | `vizcontrol diff a.vizc b.vizc` + Diff view. Highest value for "why did these two runs differ". |
+| 1 | pytest plugin, if not finished in v1 (FR-RUN-4) | runners | Done: `pytest --vizcontrol`. |
+| 2 | Data Flow view and object evolution (FR-ANA-4/6, FR-VIZ-10) | analysis, viewer | Done: Data Flow view, nested objects included. Exact attribution still needs the `state` level. |
+| 3 | Run comparison (FR-ANA-7, FR-VIZ-11) | analysis.compare | Diff view done. Pending: a `vizcontrol diff a.vizc b.vizc` command and differing return values. |
 | 4 | Chronological replay (FR-VIZ-12) | `seq`, timeline | Scrub events in order and watch values change. |
 | 5 | Async capture (FR-CAP-12) | capture | Task creation/await causality via `asyncio` task hooks, so coroutines nest by logical caller. |
 | 6 | FastAPI/ASGI instrumentation (FR-RUN-5) | 5, runners | Middleware, one run per request, sampling or header trigger. |

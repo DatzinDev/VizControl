@@ -49,7 +49,7 @@ All responses are JSON. Lists are paged with `offset`/`limit`. Fields derived by
 | `GET /api/runs/{run}/error` | Error path, or `null`. | `analysis.error_path` |
 | `GET /api/runs/{run}/source/{file_id}` | `{path, relpath, sha256, source}`; `source` is null if not stored. | `Reader.file` |
 | `GET /api/runs/{run}/search?q=` | Hits linking to call ids. | `analysis.search` |
-| `GET /api/compare?a={run}&b={run}` | Divergence point + differing subtrees (Later). | `analysis.compare` |
+| `GET /api/compare?a={run}&b={run}` | Summary counts, the first divergence (parent, path, calls only in A / only in B, argument diff, branch source). Both ids go through the run registry. | `analysis.compare` |
 
 Previews: list endpoints never inline full values. Each binding returns a one-line `preview` (≤ 120 chars,
 computed from the stored value tree) plus `value_id` for lazy loading.
