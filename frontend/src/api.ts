@@ -16,6 +16,7 @@ export interface RunSummary {
   level: string;
   max_depth: number | null;
   cut_calls: number[];  // where max_calls stopped tracing
+  process_gone: boolean;  // never closed and its process no longer exists: killed (inferred)
   error?: string;
 }
 

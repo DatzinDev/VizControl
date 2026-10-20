@@ -50,6 +50,11 @@ export function RunInspector({ run, error, onOpenCall }: { run: RunSummary; erro
     <>
       <div className="title-lg">{runLabel(run)}</div>
       <Outcome outcome={run.outcome} extra={`${run.kind}${run.exit_code != null ? ` · exit ${run.exit_code}` : ""}`} />
+      {run.process_gone && (
+        <div className="box dashed unfinished" style={{ fontSize: 12 }}>
+          ┄ The process that wrote this run is gone without closing it (killed?). Everything flushed before is here.
+        </div>
+      )}
       <Section title="Run">
         <KV rows={[["duration", ms(run.duration_ns)], ["calls", run.calls.toLocaleString()], ["level", run.level], ["started", run.started.replace("T", " ").slice(0, 19)],
           ["truncated", run.truncated.length ? <span className="unfinished">{run.truncated.join(", ")}</span> : <span className="ok">no</span>]]} />

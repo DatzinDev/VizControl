@@ -5,6 +5,7 @@ from __future__ import annotations
 import itertools
 import json
 import os
+import socket
 import sqlite3
 import threading
 from pathlib import Path
@@ -110,7 +111,8 @@ class Writer:
         self.db.execute("PRAGMA synchronous = NORMAL")
         self.db.executescript(SCHEMA)
         self.db.executemany("INSERT INTO meta VALUES (?, ?)",
-                            [("format_version", FORMAT_VERSION), ("vizcontrol_version", __version__)])
+                            [("format_version", FORMAT_VERSION), ("vizcontrol_version", __version__),
+                             ("pid", str(os.getpid())), ("host", socket.gethostname())])
         self.db.execute(f"INSERT INTO run (id, {', '.join(RUN_FIELDS)}) VALUES (1, {', '.join('?' * len(RUN_FIELDS))})",
                         [run[f] for f in RUN_FIELDS])
 
@@ -179,7 +181,24 @@ class Reader:
         run["argv"] = json.loads(run["argv"])
         run["config"] = json.loads(run["config"])
         run["truncated"] = json.loads(run["truncated"]) if run["truncated"] else []
+        run["process_gone"] = run["outcome"] == "running" and self._writer_gone()
+        if run["process_gone"]:  # killed (SIGKILL, power loss): it will never close, so it is unfinished (inferred)
+            run["outcome"] = "unfinished"
         return run
+
+    def _writer_gone(self) -> bool:
+        """True if the process that wrote this trace no longer exists. Only answerable on this host, on POSIX:
+        on Windows os.kill(pid, 0) would terminate the process. A reused pid reads as alive, the safe side."""
+        meta = {r["key"]: r["value"] for r in self._all("SELECT key, value FROM meta WHERE key IN ('pid', 'host')")}
+        if os.name != "posix" or "pid" not in meta or meta.get("host") != socket.gethostname():
+            return False
+        try:
+            os.kill(int(meta["pid"]), 0)
+        except ProcessLookupError:
+            return True
+        except PermissionError:  # alive, owned by someone else
+            pass
+        return False
 
     def counts(self) -> dict[str, int]:
         return {t: self._one(f"SELECT COUNT(*) AS n FROM {t}")["n"] for t in COLUMNS}

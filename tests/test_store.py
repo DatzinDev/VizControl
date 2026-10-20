@@ -1,4 +1,7 @@
 import json
+import os
+import subprocess
+import sys
 
 from vizcontrol.store import Reader, Writer
 
@@ -73,3 +76,21 @@ def test_refuses_to_overwrite_a_file_that_is_not_a_trace(tmp_path):
     with pytest.raises(FileExistsError):
         Writer(precious, RUN)
     assert precious.read_text() == "important"
+
+
+def test_a_run_whose_writer_died_reads_as_unfinished(tmp_path):
+    def outcome():
+        r = Reader(tmp_path / "live.vizc")
+        run = r.run()
+        r.close()
+        return run["outcome"], run["process_gone"]
+
+    w = Writer(tmp_path / "live.vizc", RUN)
+    w.flush()
+    assert outcome() == ("running", False)  # this process wrote it and is alive
+    dead = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"], capture_output=True, text=True)
+    w.db.execute("UPDATE meta SET value = ? WHERE key = 'pid'", (dead.stdout.strip(),))
+    if os.name == "posix":
+        assert outcome() == ("unfinished", True)
+    w.close("ok", 0, 1, [])
+    assert outcome() == ("ok", False)  # a closed run is never second-guessed
