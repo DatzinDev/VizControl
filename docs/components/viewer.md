@@ -22,6 +22,7 @@ lays out, renders and navigates. Visual concept: [UI design](../ui-design.md).
 | Level 4 value tree, object history and field-level changes | Provenance marks beyond groups, stages, flow and changes |
 | Source: excerpt in the inspector, and "View file" opens the whole file with the call or raise line in view (Esc closes it) | |
 | ✂ on calls cut by a limit (at `max_depth` when `limit_depth` was hit, or where `max_calls` stopped), with the reason in the inspector | |
+| A run opens on its failure, or on its overview; a run with one stage of its own (a package staged as one) opens on that stage's modules. With no runs, the canvas says how to trace the first one | |
 | ⌘K search; URL hash keeps `run` and `call`, `stage` or `obj`; browser back/forward walk every navigation (a run opening on its failure doesn't add an entry) | |
 | Data Flow: object picker, lanes per module, Δ on changed fields, object inspector, follow from any oid chip | |
 | Map: every served run on one stage graph, "N runs" on stages and edges, the selected run's route in accent (picking a run keeps the map); a stage lists the runs that went through it and those that never reached it, and double-click opens it in a run that did | |
