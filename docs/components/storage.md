@@ -16,11 +16,12 @@ FR-PER-1..5, NFR-PERF-2, NFR-DEC-1.
 ```python
 class Writer:
     def __init__(self, path: Path, run_meta: dict): ...   # creates file, schema, meta, run row
-    def code(self, file: str, qualname: str, ...) -> int  # interned, returns code id
-    def put(self, table: str, row: tuple) -> None         # enqueue
-    def update_call(self, call_id: int, ...) -> None      # close a call
-    def flush(self) -> None
-    def close(self, outcome: str, exit_code: int | None) -> None
+    def new_id(self, table: str) -> int                    # ids assigned in Python, before rows are written
+    def add(self, table: str, row: tuple) -> None          # append to the in-memory batch (lock + append)
+    def close_call(self, call_id, ...) -> None             # UPDATE for a call written while still open
+    pending: int                                           # rows waiting; the tracer decides when to flush
+    def flush(self) -> None                                # one transaction
+    def close(self, outcome, exit_code, ended_ns, truncated) -> None
 
 class Reader:
     def __init__(self, path: Path): ...                   # read-only connection (mode=ro URI)
@@ -40,17 +41,19 @@ class Reader:
 
 - Ids are assigned in Python (counters), not by SQLite, so the tracer can reference a call id before the row is
   written.
-- Rows go into per-table in-memory lists. `flush()` runs `executemany` per table inside one transaction. Flush
-  triggers: `flush_every` rows (default 10,000) or `flush_ms` (default 200 ms), checked on each `put`. There is
-  no writer thread in v1.
-- Closing a call is an `UPDATE`, batched the same way. Calls still open at `close()` stay `unfinished`.
+- Rows go into per-table in-memory lists. `flush()` runs `executemany` per table inside one transaction. The tracer
+  flushes when more than 20,000 rows are pending. There is no writer thread and no time-based flush in v1.
+- Calls are normally written once, already closed (see [capture](capture.md#shadow-stack-and-call-tree-fr-cap-123)).
+  Only calls open during a flush get an `INSERT` followed by an `UPDATE` on close.
+- Indexes are created in `close()`, because maintaining them during capture slows inserts. A killed run's file has
+  none, and readers still work, just slower.
 - Pragmas while writing: `journal_mode=WAL`, `synchronous=NORMAL`. On `close()`: final flush, `run` row update,
-  `wal_checkpoint(TRUNCATE)`, `journal_mode=DELETE`, so the file is one self-contained file.
+  indexes, `wal_checkpoint(TRUNCATE)`, `journal_mode=DELETE`, so the file is one self-contained file.
 - `file` rows are written on the first code object of each file, with source text if `store_source` is on
   (FR-PER-3) and always with the `sha256`.
 - Crash tolerance (FR-PER-4): the runner registers `atexit` and `SIGTERM`/`SIGINT` handlers that flush and close
-  with outcome `unfinished`. On `SIGKILL` the last committed batch survives thanks to WAL. The reader treats
-  `outcome = running` without a live writer lock as `unfinished`.
+  with outcome `unfinished`. On `SIGKILL` the last committed batch survives thanks to WAL. Such a file keeps
+  `outcome = running`. Telling it apart from a live run (writer lock check) is not implemented yet.
 
 ### Reader
 

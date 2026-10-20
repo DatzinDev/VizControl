@@ -30,50 +30,62 @@ class Tracer:
 ### Tool id and events
 
 - Claims `sys.monitoring.PROFILER_ID` and falls back to free ids 3 and 4. This coexists with debuggers
-  (`DEBUGGER_ID`) and coverage (`COVERAGE_ID`).
+  (`DEBUGGER_ID`) and coverage (`COVERAGE_ID`). `restart_events()` at start drops `DISABLE`s left by a previous run.
 - Global events: `PY_START`, `PY_RESUME`, `PY_RETURN`, `PY_YIELD`, `PY_UNWIND`, `PY_THROW`, `RAISE`, `RERAISE`,
   `EXCEPTION_HANDLED`, plus `CALL`, `C_RETURN` and `C_RAISE` when opaque calls are on.
-- Local events: `LINE`, only on code objects selected for per-line capture
-  (`sys.monitoring.set_local_events`).
+- Per-line capture (`LINE` local events on selected functions, FR-CAP-5 Should) is not implemented yet.
 
 ### Filtering (FR-CAP-7, NFR-PERF-1)
 
-The first `PY_START` of a code object resolves `code.co_filename` against the filters and caches the decision
-in a `dict[CodeType, int | None]` (code row id, or `None` if excluded).
+The first event of a code object resolves `code.co_filename` (and the module from `f_globals["__name__"]`) against
+the filters and caches the decision in a `dict[CodeType, int | None]` (code row id, or `None` if excluded).
 
 - Excluded → the callback returns `sys.monitoring.DISABLE`, so the interpreter stops calling it for that code
   object.
 - Events that cannot be disabled (`RAISE`, `PY_UNWIND`, `EXCEPTION_HANDLED`, `C_RETURN`, ...) do one dict lookup
   and return early for excluded code.
 
-Default filters: include everything under the run's project root (cwd, or the target's directory). Exclude
-`sys.prefix`/`sys.base_prefix` (stdlib), `site-packages`/`dist-packages`, frozen and `<string>` code, and
-VizControl itself. Users add `include`/`exclude` globs on module names or paths. Excludes win over includes.
+Default filters: include everything under the project root (cwd, plus the script's directory for script runs).
+Exclude the stdlib, `sys.prefix`/`sys.base_prefix`/`exec_prefix`, site-packages, `<frozen ...>`/`<string>` code
+and VizControl itself. Users add `include`/`exclude` globs on module names (`app.*` also matches `app`) or paths.
+Excludes win over includes; a non-empty `include` replaces the project-root rule.
 
 ### Shadow stack and call tree (FR-CAP-1/2/3)
 
 - One stack per thread (`threading.get_ident()` → list of open call records). The top of the stack is the parent
   of the next included call. This yields `parent_id`, `depth` and `call_line` (from the caller frame's
-  `f_lineno`).
-- `PY_START`: push and write `call` row (outcome `unfinished` until closed); `seq` from a global counter.
-- `PY_RETURN`: pop, set `end_ns`, `seq_end`, `outcome = ok`, capture the return value.
+  `f_lineno`, only when the caller is the parent).
+- Records are matched to their end events by `id(frame)`, which is unique while the frame runs. A record whose end
+  event never came (the frame started before tracing, a missed event) is closed as `unfinished` when an
+  ancestor ends, and an end event without a matching record is ignored.
+- `PY_START`: push a record; `seq` from a global counter. `PY_RETURN`: pop, capture the return value, and write
+  the **whole row once**, already closed. A row is written while still open only when a flush happens during the
+  call (so a killed process keeps its ancestors); it is then closed with an `UPDATE`. `children` is counted in
+  memory.
 - `PY_UNWIND`: pop, `outcome = raised`, link the in-flight exception.
-- Generators/coroutines: `PY_YIELD` pops but keeps the record open; `PY_RESUME` pushes the same record again. One
-  generator invocation is one call node; calls during any resume are its children. Async task causality is
-  FR-CAP-12 (Later).
+- Generators/coroutines: `PY_YIELD` pops but keeps the record open; `PY_RESUME`/`PY_THROW` push the same record
+  again. One generator invocation is one call node; calls during any resume are its children. Async task
+  causality is FR-CAP-12 (Later).
 - Frames are obtained with `sys._getframe(1)` inside the callback. No frame reference is stored past the
   callback.
 
 ### Opaque calls (FR-CAP-8)
 
-When included code calls something that is not traced (a C function, an excluded Python function), the `CALL`
-event (fired in the caller) records an opaque call node with the callable's qualified name:
+When included code calls something that is not traced, the `CALL` event (fired in the caller) records an opaque
+call node with the callable's qualified name. This applies to excluded **Python** functions and methods (library
+entry points such as `json.dumps` or `session.commit`), classes outside `builtins`, and callable instances.
 
-- C callables close exactly on `C_RETURN`/`C_RAISE`.
-- Excluded Python callables have no own events. The node closes at the next event observed in the caller's frame.
-  Its `end_ns` is then an upper bound, and the node is marked so the UI can show the duration as approximate.
-- Included code called back from inside an opaque call (framework → user handler) becomes its child. This keeps
-  "the library called my function" visible.
+- C functions and methods (`len`, `re.Pattern.match`, `list.append`, `time.sleep`) are **not** recorded. They are
+  per-element noise and their time stays in the caller's self time. The `CALL` event is disabled at a call site the
+  first time it calls C code. The assumption is that a site calling C always does; a site that later calls a
+  Python library function there loses that opaque node.
+- `Class()` and `obj()` push a pending opaque node. If the next event is the class's `__init__`/`__new__` (or the
+  object's `__call__`) starting from the same caller frame, that traced callee replaces the opaque node.
+- Calls to classes implemented in C close exactly on `C_RETURN`/`C_RAISE`.
+- Excluded Python callables have no own events. The node closes at the next event observed in the caller's frame,
+  its `end_ns` is an upper bound, and `end_exact = 0`.
+- Included code called back from inside an opaque call (framework → user handler, `sorted(key=f)` excluded)
+  becomes its child. This keeps "the library called my function" visible.
 
 Opaque calls are on by default and can be turned off (`opaque_calls = false`) for lower overhead.
 
@@ -81,31 +93,38 @@ Opaque calls are on by default and can be turned off (`opaque_calls = false`) fo
 
 | Level | Records |
 |---|---|
-| `calls` | call tree, timing, outcome, exception type/message |
-| `values` (default) | + arguments at `PY_START`, return value, exception object |
-| `state` | + locals snapshot at return and at unwind; per-line locals for functions listed in `trace_lines` |
+| `calls` | call tree, timing, outcome, exception type/message/traceback |
+| `values` (default) | + arguments at `PY_START`, return value, yielded values, exception object, **locals at the frame where an exception originates** |
+| `state` | + locals snapshot at return and at unwind |
 
 Arguments are read from `frame.f_locals` using the first `co_argcount + co_kwonlyargcount (+ *args, **kwargs)`
-names of `co_varnames`. Every value goes through the `Encoder` before being queued. Snapshots skip names already
-captured with an identical encoding in the same call (dedup by hash) to save space.
+names of `co_varnames`. Every value goes through the `Encoder` before being queued. Locals snapshots take at most
+`values.max_items` names.
 
 ### Exceptions (FR-CAP-6)
 
-- `RAISE`: if this exception object has not been seen, write an `exception` row for the current call and line.
-  Store a weak mapping `id(exc) → exception_id`, cleared when the exception is handled or escapes.
-- `RERAISE` and propagation via `PY_UNWIND` mark each unwound call `raised` with the same `exception_id`.
-- `EXCEPTION_HANDLED` sets `handled_call_id`.
-- At stop, an exception still in flight means it escaped the run.
-- `__cause__`/`__context__` chains are linked through `cause_id`. The full traceback, including frames not
-  observed, is stored as JSON.
+`RAISE` fires in every frame an exception propagates through, so entries are keyed by `id(exc)` with a strong
+reference while in flight (exceptions don't support weakrefs):
+
+- `RAISE` of an unseen object creates the entry at the current call and line, with locals at that point.
+  `RAISE`/`RERAISE` of a known object is propagation or re-raise and does nothing new.
+- `PY_UNWIND` marks each unwound call `raised` with the same `exception_id`.
+- `EXCEPTION_HANDLED` records the handler call, but the entry stays pending. `with` blocks and `except: ...; raise`
+  catch and then re-raise the same object, and a `RERAISE` reopens the entry. Pending entries are written when
+  more than 64 have accumulated or at stop.
+- Caught in an untraced frame with nothing traced on the stack (the runner, the `trace()` block) = escaped,
+  `handled_call_id = NULL`.
+- The message is `BaseException.__str__` when all args are simple types, so no user `__str__` runs.
+  `__cause__`/`__context__` link through `cause_id`. The traceback is stored as JSON without VizControl/runpy
+  frames.
 
 ### Limits (FR-CAP-10)
 
-`max_calls`, `max_depth`, `max_values_bytes`, `max_snapshots_per_call`, `max_lines`. When a limit is hit:
+`max_calls`, `max_depth`, `max_values_bytes`. When a limit is hit:
 
-1. A `gap` row is written with the kind and the current `seq`.
-2. Capture degrades: for example, past `max_values_bytes` it falls back to `calls` level, and past `max_depth` it
-   stops creating nodes below that depth but still records exceptions crossing it.
+1. A `gap` row is written with the kind and the current `seq` (once per kind).
+2. Capture degrades: past `max_values_bytes` it falls back to `calls` level. Past `max_depth` it pushes "skip"
+   records so deeper calls are not written, while their returns still match. Past `max_calls` tracing stops.
 3. `run.truncated` lists the limits hit.
 
 Capture never silently drops data without a `gap` row.
@@ -113,21 +132,41 @@ Capture never silently drops data without a `gap` row.
 ### Threads (FR-CAP-11)
 
 Callbacks fire on every thread, and each thread has its own stack. Calls carry `thread_id`. A thread's first
-included call becomes a root (`parent_id = NULL`) unless the thread was started from an included call. In that
-case it is linked as a child of the call that ran `Thread.start()`, marked inferred.
+included call is a root (`parent_id = NULL`). Linking it to the call that ran `Thread.start()` (inferred) is not
+implemented yet. `threads = false` traces the main thread only.
+
+### Writes and flushing (NFR-PERF-2)
+
+Rows are appended to the writer's in-memory batches. When more than `flush_every` (20,000) are pending, the
+current thread's open calls are written and the batch is committed. Other threads' open calls are written on
+their own flushes or at stop.
 
 ### Safety (NFR-SAFE-1)
 
-- Every callback body runs under `try/except BaseException`. On an internal error the tracer writes a
-  `tracer_error` gap, disables all events, warns once on stderr and lets the program continue.
-- A thread-local re-entrancy flag stops VizControl's own code (encoder, writer) from being traced.
-- No strong references to user objects outlive a callback. Object ids use `id()` plus a `weakref.finalize` or
-  generation counter (see [serialization](serialization.md)).
+- Every callback body runs under `try/except Exception`. On an internal error the tracer writes a `tracer_error`
+  gap, disables all events, warns once on stderr and lets the program continue. `KeyboardInterrupt`/`SystemExit`
+  are not caught, so they keep working.
+- Callbacks are not re-entered: the interpreter does not fire events for code run inside a callback, and
+  VizControl's own modules are excluded anyway.
+- No frame references outlive a callback. In-flight exceptions are the only strong references kept, until
+  resolved.
+
+### Measured overhead
+
+`benchmarks/overhead.py` on Python 3.13, x86-64 laptop:
+
+| Workload | `calls` | `values` | `state` |
+|---|---|---|---|
+| app-like (traced code orchestrating json/re/sorting) | ≈1.0× | ≈1.0× | ≈1.1× |
+| worst case (87k tiny traced functions) | 4.6 µs/call (≈60×) | 27 µs/call | 42 µs/call |
+
+The worst case is pure per-call bookkeeping in Python. A C accelerator for the hot callbacks is the upgrade path
+if it matters.
 
 ## Config knobs
 
-`level`, `include`, `exclude`, `opaque_calls`, `trace_lines`, `threads`, `max_calls`, `max_depth`,
-`max_values_bytes`, `max_snapshots_per_call`, `max_lines`. See [CLI](cli.md#configuration).
+`level`, `include`, `exclude`, `opaque_calls`, `threads`, `limits.max_calls`, `limits.max_depth`,
+`limits.max_values_bytes`. See [CLI](cli.md#configuration).
 
 ## Limits and failure modes
 

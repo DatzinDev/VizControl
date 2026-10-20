@@ -20,8 +20,7 @@ vizcontrol run [options] -m module [args...]      # FR-RUN-2
     --out-dir DIR            default .vizcontrol/runs
     --level {calls,values,state}
     --include GLOB  --exclude GLOB   (repeatable)
-    --trace-lines QUALNAME           (repeatable) per-line capture for these functions
-    --open                           serve and open the viewer when the run ends
+    --open                           serve and open the viewer when the run ends (with `serve`)
     --config FILE                    explicit config file
 
 vizcontrol serve [PATH]     # file or directory, default .vizcontrol/runs
@@ -51,7 +50,6 @@ level = "values"                # calls | values | state
 include = ["app.*"]             # module globs or paths; default: project root
 exclude = ["app.migrations.*"]
 opaque_calls = true
-trace_lines = ["app.services.pricing.compute"]
 threads = true
 store_source = true
 out_dir = ".vizcontrol/runs"
@@ -61,14 +59,13 @@ stage_depth = 2
 max_calls = 1_000_000
 max_depth = 200
 max_values_bytes = 268_435_456  # 256 MiB of encoded values per run
-max_snapshots_per_call = 20
-max_lines = 100_000
 
 [tool.vizcontrol.values]
-max_depth = 4
-max_items = 50
-max_str = 500
+max_depth = 3
+max_items = 20
+max_str = 200
 max_value_bytes = 65_536
+max_nodes = 100                 # per value: bounds the cost of each binding
 safe_repr_types = ["decimal.Decimal", "uuid.UUID"]
 serializers = { "numpy.ndarray" = "mypkg.viz:ndarray" }
 

@@ -38,9 +38,10 @@ The encoder walks the object breadth-limited and depth-limited and **never calls
 | Other objects | Attributes from `object.__getattribute__(obj, "__dict__")` plus `__slots__` read through the member descriptors. Properties, `__getattr__` and `__repr__` are never triggered. |
 | Iterators, generators, files, sockets, locks, modules, functions, classes | `opaque` with type and, where cheap and safe, a label (function qualname, module name, file name). Never consumed. |
 
-Limits: `max_depth` (default 4), `max_items` (default 50), `max_str` (default 500), `max_value_bytes` (default 64 KiB
-per encoded value). The encoder stops at the limit and marks the node (`trunc`, `len`). Within one encoded value,
-an object met twice becomes a `ref` node, so cycles terminate.
+Limits: `max_depth` (default 3), `max_items` (default 20), `max_str` (default 200), `max_nodes` (default 100
+container/object nodes per value) and `max_value_bytes` (default 64 KiB per encoded value). The encoder stops at
+the limit and marks the node (`trunc`, `len`). Within one encoded value, an object met twice becomes a `ref`
+node, so cycles terminate. How each type is encoded is decided once per type and cached.
 
 ## Object identity (FR-VAL-3)
 
@@ -74,7 +75,7 @@ Redaction can be strengthened but not disabled by flags. Clearing the default ru
 
 ## Config knobs
 
-`max_depth`, `max_items`, `max_str`, `max_value_bytes`, `safe_repr_types`, `redact_names`, `redact_values`,
+`max_depth`, `max_items`, `max_str`, `max_nodes`, `max_value_bytes`, `safe_repr_types`, `redact_names`, `redact_values`,
 `redact_defaults`, `redact`, `serializers` (dotted paths registered at start).
 
 ## Limits and failure modes
