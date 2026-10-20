@@ -1,9 +1,9 @@
 import { Background, Controls, Edge, Handle, MarkerType, Node, NodeProps, Position, ReactFlow, useReactFlow } from "@xyflow/react";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { api, Binding, CallGraph, CallNode, Step, StepValue, Watched } from "./api";
+import { api, Binding, Callback, CallGraph, CallNode, Step, StepValue, Watched } from "./api";
 import { shortName } from "./format";
 import { ValueInspector } from "./Inspector";
-import { layout } from "./layout";
+import { layoutTree, TreeBox } from "./layout";
 
 const PAGE = 500;  // steps fetched at a time
 const FN_W = 180;
@@ -25,17 +25,24 @@ const handles = (
 const StepState = createContext<(codeId: number) => FnState>(() => "future");
 
 function FnNode({ data }: NodeProps) {
-  const d = data as { codeId: number; label: string; calls: number; observed: boolean };
+  const d = data as { codeId: number; label: string; kind: string; calls: number; observed: boolean };
   const state = useContext(StepState)(d.codeId);
+  const name = d.kind === "module" ? "import" : d.kind === "class" ? `class ${d.label}` : d.label;
   return (
     <div className={`fn ${state} ${d.observed ? "" : "lib"}`} title={d.label}>
       {handles}
-      <span className="q">{shortName(d.label)}</span>
+      <span className="q">{name}</span>
       <span className="count">{d.calls > 1 ? `×${d.calls}` : ""}</span>
     </div>
   );
 }
-const nodeTypes = { fn: FnNode };
+/** A module (a file of the project, or a library): the box its functions sit in, so the layers show. */
+function FileNode({ data }: NodeProps) {
+  const d = data as { label: string; observed: boolean };
+  return <div className={`file-box ${d.observed ? "" : "lib"}`}><span className="mono">{d.label}</span></div>;
+}
+
+const nodeTypes = { fn: FnNode, file: FileNode };
 
 /** In a graph too big to read whole, the camera follows the current function, as a debugger follows the line. */
 function FollowCurrent({ at, big }: { at?: { x: number; y: number }; big: boolean }) {
@@ -51,10 +58,15 @@ const clip = (s: string, n = 48) => (s.length > n ? `${s.slice(0, n - 1)}…` : 
 /** One line of the transcript: what happened at a step, as a debugger would say it. */
 function describe(s: Step): string {
   const name = shortName(s.qualname);
-  if (s.kind === "call") return `→ ${name}(${s.values.filter((v) => v.kind === "arg").map((v) => `${v.name}=${clip(v.preview, 32)}`).join(", ")})`;
+  if (s.kind === "call") return `${s.callback ? "↩" : "→"} ${name}(${s.values.filter((v) => v.kind === "arg").map((v) => `${v.name}=${clip(v.preview, 32)}`).join(", ")})`;
   if (s.kind === "raise") return `✗ ${name} raised ${s.exception ? `${s.exception.type}: ${s.exception.message}` : ""}`;
   const ret = s.values.find((v) => v.kind === "return");
   return `← ${name}${ret ? ` returned ${clip(ret.preview, 60)}` : ""}`;
+}
+
+/** The short tag of a callback in the transcript. */
+function callbackTag(cb: Callback): string {
+  return cb.by ? `called back by ${cb.by}` : cb.via ? `callback · via ${cb.via}` : "callback · passed in";
 }
 
 function readWatches(): string[] {
@@ -80,8 +92,12 @@ function at(list: Watched[], seq: number): Watched | undefined {
  * The run as a recording: the call graph lights up as the program goes, a transcript says who called whom with
  * what and what came back, and watches follow variables, like stepping through a debugger after the fact.
  */
-export function ReplayView(props: { runId: string; endOf?: number; onFollow: (oid: number) => void }) {
-  const { runId, endOf, onFollow } = props;
+export function ReplayView(props: {
+  runId: string;
+  start: { step?: number; endOf?: number };  // the step to open on, or the call whose end (a raise) to open on
+  onStep: (i: number) => void;
+}) {
+  const { runId, start, onStep } = props;
   const [opened, setOpened] = useState<Binding | null>(null);  // a value open in the side panel
   const [pages, setPages] = useState<Map<number, Step[]>>(new Map());
   const [total, setTotal] = useState(0);
@@ -90,7 +106,7 @@ export function ReplayView(props: { runId: string; endOf?: number; onFollow: (oi
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(5);
   const [graph, setGraph] = useState<CallGraph | null>(null);
-  const [positions, setPositions] = useState<Map<string, { x: number; y: number }> | null>(null);
+  const [positions, setPositions] = useState<Map<string, { x: number; y: number; width: number; height: number }> | null>(null);
   const [stack, setStack] = useState<CallNode[]>([]);
   const [watches, setWatches] = useState<string[]>(readWatches);
   const [watched, setWatched] = useState<Map<string, Watched[]>>(new Map());
@@ -105,17 +121,23 @@ export function ReplayView(props: { runId: string; endOf?: number; onFollow: (oi
     loading.current.clear();
     setWatched(new Map());
     setPos(null);
-    api.timeline(runId, endOf != null ? { endOf } : { offset: 0 }, 1).then((p) => {
+    api.timeline(runId, start.endOf != null ? { endOf: start.endOf } : { offset: start.step ?? 0 }, 1).then((p) => {
       if (!live) return;
       setTotal(p.total);
       setRaises(p.raises);
-      setPos(Math.min(p.offset, Math.max(p.total - 1, 0)));
+      // no step asked for: open where the work begins, past the imports
+      const at = start.endOf == null && start.step == null ? p.start : p.offset;
+      setPos(Math.min(at, Math.max(p.total - 1, 0)));
     });
     api.callgraph(runId).then((g) => live && setGraph(g));
     return () => {
       live = false;
     };
-  }, [runId, endOf]);
+  }, [runId]);
+
+  useEffect(() => {
+    if (pos != null) onStep(pos);
+  }, [pos]);
 
   const step = (i: number): Step | undefined => pages.get(Math.floor(i / PAGE))?.[i % PAGE];
   useEffect(() => {  // the page of the current step and its neighbours, for the transcript
@@ -127,12 +149,26 @@ export function ReplayView(props: { runId: string; endOf?: number; onFollow: (oi
     }
   }, [pos, total, pages, runId]);
 
+  const modules = useMemo(() => {  // module -> its functions: one box per file, so the architecture's layers show
+    const m = new Map<string, CallGraph["nodes"]>();
+    for (const n of graph?.nodes ?? []) {
+      if (n.kind === "module" || n.kind === "class") continue;  // imports and class bodies: setup, not the flow
+      const key = n.module ?? "?";
+      if (!m.has(key)) m.set(key, []);
+      m.get(key)!.push(n);
+    }
+    return m;
+  }, [graph]);
+  const flowEdges = useMemo(() => {  // the edges between the functions shown
+    const shown = new Set([...modules.values()].flat().map((n) => n.code_id));
+    return (graph?.edges ?? []).filter((e) => shown.has(e.source) && shown.has(e.target));
+  }, [graph, modules]);
   useEffect(() => {
     if (!graph) return;
-    layout(graph.nodes.map((n) => ({ id: `c${n.code_id}`, width: FN_W, height: FN_H })),
-      graph.edges.map((e) => ({ id: `${e.source}>${e.target}`, source: `c${e.source}`, target: `c${e.target}` })),
-      { layers: 60, nodes: 16 }).then(setPositions);
-  }, [graph]);
+    const tree: TreeBox[] = [...modules].map(([m, fns]) => ({ id: `m:${m}`, children: fns.map((n) => ({ id: `c${n.code_id}`, width: FN_W, height: FN_H })) }));
+    layoutTree(tree, flowEdges.map((e) => ({ id: `${e.source}>${e.target}`, source: `c${e.source}`, target: `c${e.target}` })), "RIGHT")
+      .then(setPositions);
+  }, [graph, modules, flowEdges]);
 
   const cur = pos != null ? step(pos) : undefined;
   const prevSeq = pos != null && pos > 0 ? step(pos - 1)?.seq ?? -1 : -1;
@@ -194,9 +230,26 @@ export function ReplayView(props: { runId: string; endOf?: number; onFollow: (oi
   const shown = useRef<Step | undefined>(undefined);  // the last step drawn: kept while the next page loads
   if (cur) shown.current = cur;
   const now = shown.current;
-  const nodes = useMemo<Node[]>(() => (!graph || !positions ? [] : graph.nodes.map((n) => ({
-    id: `c${n.code_id}`, type: "fn", position: positions.get(`c${n.code_id}`) ?? { x: 0, y: 0 }, width: FN_W, height: FN_H,
-    data: { codeId: n.code_id, label: n.qualname, calls: n.calls, observed: n.observed } }))), [graph, positions]);
+  const nodes = useMemo<Node[]>(() => {
+    if (!graph || !positions) return [];
+    const out: Node[] = [];
+    for (const [m, fns] of modules) {  // a parent before its children, as React Flow wants
+      const box = positions.get(`m:${m}`) ?? { x: 0, y: 0, width: FN_W, height: FN_H };
+      out.push({ id: `m:${m}`, type: "file", position: { x: box.x, y: box.y }, width: box.width, height: box.height,
+        selectable: false, data: { label: m, observed: fns.some((n) => n.observed) } });
+      for (const n of fns) {
+        const r = positions.get(`c${n.code_id}`) ?? { x: 0, y: 0 };
+        out.push({ id: `c${n.code_id}`, type: "fn", parentId: `m:${m}`, position: { x: r.x, y: r.y }, width: FN_W, height: FN_H,
+          data: { codeId: n.code_id, label: n.qualname, kind: n.kind, calls: n.calls, observed: n.observed } });
+      }
+    }
+    return out;
+  }, [graph, positions, modules]);
+  const absolute = (code: number) => {  // where a function sits on the canvas: its box's position plus its own
+    const n = graph?.nodes.find((x) => x.code_id === code && x.kind !== "module" && x.kind !== "class");
+    const r = positions?.get(`c${code}`), box = n && positions?.get(`m:${n.module ?? "?"}`);
+    return r && box ? { x: box.x + r.x, y: box.y + r.y } : undefined;
+  };
   const stateOf = useMemo(() => {
     const onStack = new Set(stackCodes);
     const first = new Map(graph?.nodes.map((n) => [n.code_id, n.first_seq]));
@@ -207,17 +260,21 @@ export function ReplayView(props: { runId: string; endOf?: number; onFollow: (oi
     if (!graph || !now) return [] as Edge[];
     const cur = now;
     const active = new Set(stackCodes.slice(1).map((c, i) => `${stackCodes[i]}>${c}`));
-    return graph.edges.map((e): Edge => {
+    return flowEdges.map((e): Edge => {
       const id = `${e.source}>${e.target}`;
       const live = active.has(id);
       const seen = e.first_seq <= cur.seq;
-      const color = live ? (cur.kind === "raise" ? "var(--raised)" : "var(--accent)") : seen ? "var(--muted)" : "var(--border)";
-      return { id, source: `c${e.source}`, target: `c${e.target}`, type: "smoothstep", animated: live,
-        label: seen && e.calls > 1 ? `×${e.calls}` : undefined,
-        style: { stroke: color, strokeWidth: live ? 2.5 : 1, opacity: seen ? 1 : 0.35 },
+      // a callback (a function the caller held, or a library calling back) is dashed, in the data-flow colour
+      const color = live ? (cur.kind === "raise" ? "var(--raised)" : "var(--accent)") : !seen ? "var(--border)"
+        : e.callback ? "var(--flow)" : "var(--muted)";
+      const tag = e.callback ? (e.callback.by ? "callback" : e.callback.via ? `via ${e.callback.via}` : "callback") : "";
+      const count = e.calls > 1 ? `×${e.calls}` : "";
+      return { id, source: `c${e.source}`, target: `c${e.target}`, type: "smoothstep", animated: live, zIndex: 10,
+        label: seen ? [tag, count].filter(Boolean).join(" ") || undefined : undefined,
+        style: { stroke: color, strokeWidth: live ? 2.5 : 1, opacity: seen ? 1 : 0.35, strokeDasharray: e.callback && !live ? "6 4" : undefined },
         markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 } };
     });
-  }, [graph, now, stackCodes]);
+  }, [graph, now, stackCodes, flowEdges]);
 
   if (pos == null || !graph) return <div className="empty">Loading the recording…</div>;
   if (!total) return <div className="empty">Nothing was traced in this run.</div>;
@@ -248,7 +305,7 @@ export function ReplayView(props: { runId: string; endOf?: number; onFollow: (oi
               fitViewOptions={{ padding: 0.15, maxZoom: 1.2 }} minZoom={0.1} proOptions={{ hideAttribution: true }}>
               <Background gap={24} size={1} color="var(--border)" />
               <Controls showInteractive={false} position="bottom-right" />
-              <FollowCurrent at={now && positions.get(`c${now.code_id}`)} big={graph.nodes.length > 30} />
+              <FollowCurrent at={now && absolute(now.code_id)} big={nodes.length > 40} />
             </ReactFlow>
             </StepState.Provider>
           )}
@@ -260,6 +317,7 @@ export function ReplayView(props: { runId: string; endOf?: number; onFollow: (oi
               style={{ paddingLeft: 8 + s.depth * 16 }} onClick={() => go(s.i)}>
               <span className="n">{s.i + 1}</span>
               <span className="what">{describe(s)}</span>
+              {s.kind === "call" && s.callback && <span className="cb">{callbackTag(s.callback)}</span>}
             </button>
           ))}
         </div>
@@ -284,7 +342,7 @@ export function ReplayView(props: { runId: string; endOf?: number; onFollow: (oi
 
       <aside className="panel inspector watch">
         {opened ? (
-          <ValueInspector run={runId} binding={opened} onBack={() => setOpened(null)} onFollow={onFollow}
+          <ValueInspector run={runId} binding={opened} onBack={() => setOpened(null)}
             onOpenCall={(id) => api.path(runId, id).then((p) => { setOpened(null); jumpToSeq(p[p.length - 1].seq); })} />
         ) : <>
         <div className="section">
@@ -295,6 +353,7 @@ export function ReplayView(props: { runId: string; endOf?: number; onFollow: (oi
               <div className="muted" style={{ fontSize: 12 }}>
                 {cur.file ? `${cur.file}:${cur.kind === "raise" && cur.exception?.line ? cur.exception.line : cur.first_line}` : "library, not observed inside"}
               </div>
+              {cur.kind === "call" && cur.callback && <CallbackInfo cb={cur.callback} caller={stack[stack.length - 2]?.qualname} onJump={jumpToSeq} />}
               <Values values={cur.values} onWatch={addWatch}
                 onOpen={(v) => setOpened({ ...v, call_id: cur.call_id, seq: cur.seq, line: null } as unknown as Binding)} />
             </>
@@ -361,6 +420,30 @@ function Values({ values, onWatch, onOpen }: { values: StepValue[]; onWatch: (na
           {v.name && v.kind !== "return" && <button className="pin" onClick={() => onWatch(v.name!)} title={`Watch ${v.name}`}>👁</button>}
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Why this call was a callback: who ran it without naming it, where the function was, where it came from. */
+function CallbackInfo({ cb, caller, onJump }: { cb: Callback; caller?: string; onJump: (seq: number) => void }) {
+  const who = caller ? shortName(caller) : "the caller";
+  return (
+    <div className="callback-box">
+      <div className="label">Callback · inferred</div>
+      {cb.by ? (
+        <div>Called back by <span className="mono">{cb.by}</span>, library code not traced inside.</div>
+      ) : (
+        <>
+          <div>{who} didn't call it by name: <span className="mono">{cb.line}</span>{cb.at ? <span className="muted"> (line {cb.at})</span> : null}</div>
+          {cb.via && <div>{who} had it in <span className="mono">{cb.via}</span>.</div>}
+          {cb.registered && (
+            <div>First seen {cb.registered.kind === "return" ? "returned by" : "passed to"}{" "}
+              <button className="link" onClick={() => onJump(cb.registered!.seq)}>{shortName(cb.registered.qualname)}</button>
+              {cb.registered.path ? <> as <span className="mono">{cb.registered.path}</span></> : null}.
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

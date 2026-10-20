@@ -22,76 +22,6 @@ export interface RunSummary {
   error?: string;
 }
 
-export interface StageNode {
-  name: string;
-  calls: number;
-  total_ns: number;
-  self_ns: number;
-  raised: number;
-  unfinished: number;
-  first_seq: number;
-  first_call: number;
-  observed: boolean;
-  stdlib: boolean;  // a standard library stage (not observed inside): hidden unless asked for or raised
-  modules: string[];
-  runs?: string[];  // in the route map: the runs that went through it
-}
-
-export interface StageEdge {
-  from: string;
-  to: string;
-  calls: number;
-  total_ns: number;
-  first_seq: number;
-  runs?: string[];
-}
-
-export interface StageGraph {
-  nodes: StageNode[];
-  edges: StageEdge[];
-  main_path: string[];
-}
-
-export interface Route {
-  run: string;
-  outcome: string | null;
-  stages: string[];
-  edges: [string, string][];
-}
-
-/** Level 1 over all served runs (`/api/map`). */
-export interface RouteMap extends StageGraph {
-  routes: Route[];
-}
-
-export interface StageFunction {
-  code_id: number;
-  qualname: string;
-  cls: string | null;
-  module: string | null;
-  file: string | null;
-  kind: string;
-  observed: boolean;
-  calls: number;
-  total_ns: number;
-  self_ns: number;
-  raised: number;
-  unfinished: number;
-  first_call: number;
-  first_seq: number;
-}
-
-/** Level 2: one stage opened into module › class › function. */
-export interface StageDetail {
-  stage: string;
-  observed: boolean;
-  functions: StageFunction[];
-  edges: { from: number; to: number; calls: number }[];
-  incoming: { stage: string | null; from_code: number | null; from_qualname: string | null; to: number; calls: number }[];
-  outgoing: { from: number; stage: string; calls: number }[];
-  stats: { modules: number; classes: number; functions: number; calls: number; total_ns: number; self_ns: number };
-}
-
 export interface CallNode {
   type: "call";
   id: number;
@@ -114,48 +44,6 @@ export interface CallNode {
   file: string | null;
   first_line: number | null;
   stage: string | null;
-  items?: TreeItem[];
-}
-
-export interface GroupNode {
-  type: "group";
-  parent_id: number | null;
-  code_id: number;
-  qualname: string;
-  module: string | null;
-  kind: string;
-  observed: boolean;
-  count: number;
-  outcomes: { ok: number; raised: number; unfinished: number };
-  total_ns: number;
-  first_call_id: number;
-  seq: number;
-  stage: string | null;
-}
-
-export interface MoreNode {
-  type: "more";
-  parent_id: number | null;
-  remaining: number;
-}
-
-export type TreeItem = CallNode | GroupNode | MoreNode;
-
-export interface ExceptionRow {
-  id: number;
-  type: string;
-  message: string;
-  raised_call_id: number | null;
-  raised_line: number | null;
-  handled_call_id: number | null;
-  traceback: string;
-}
-
-export interface CallDetail extends CallNode {
-  file_id: number | null;
-  caller: { id: number; qualname: string; file: string | null; line: number | null } | null;
-  started_by: { id: number; caller_id: number | null; caller: string | null; inferred: true } | null;  // a thread's root
-  exception?: ExceptionRow;
 }
 
 export interface Binding {
@@ -246,58 +134,6 @@ export interface Hop {
   inferred: boolean;
 }
 
-export interface ObjectSummary {
-  object_id: number;
-  type: string;
-  name: string | null;
-  count: number;
-  first_seq: number;
-}
-
-export interface DiffCall {
-  id: number;
-  module: string | null;
-  qualname: string;
-  outcome: Outcome;
-  duration_ns: number | null;
-  depth: number;
-  call_line?: number | null;
-}
-
-/** Two runs aligned: where they split and why (FR-ANA-7). */
-export interface RunDiff {
-  summary: { matched: number; returns_differ: number; only_a: number; only_b: number; outcome_a: Outcome; outcome_b: Outcome; truncated: boolean };
-  divergence: {
-    parent_a: number | null;
-    parent_b: number | null;
-    parent: { qualname: string; module: string | null; file: string | null; line: number | null } | null;
-    path: { a: DiffCall; b: DiffCall }[];
-    only_a: DiffCall[];
-    only_b: DiffCall[];
-    args: { name: string; same: boolean; a: string | null; b: string | null; changes: Diff[] }[];
-    branch: { file: string; first: number; lines: string[]; a_lines: number[]; b_lines: number[] } | null;
-  } | null;
-  /** Matched calls that returned something different, in the order they returned in A. */
-  returns: { a: number; b: number; qualname: string; module: string | null; a_value: string; b_value: string; changes: Diff[] }[];
-}
-
-export interface Hit {
-  kind: "function" | "variable" | "value";
-  label: string;
-  call_id: number;
-  module?: string;
-  count?: number;
-  preview?: string;
-  role?: string;
-}
-
-export interface Source {
-  file_id: number;
-  path: string;
-  relpath: string | null;
-  source: string | null;
-}
-
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path);
   if (!res.ok) {
@@ -311,24 +147,10 @@ const run = (id: string) => `/api/runs/${encodeURIComponent(id)}`;
 
 export const api = {
   runs: () => get<RunSummary[]>("/api/runs"),
-  stages: (r: string) => get<StageGraph>(`${run(r)}/stages`),
-  stage: (r: string, name: string) => get<StageDetail>(`${run(r)}/stage?name=${encodeURIComponent(name)}`),
-  mermaid: (r: string, name?: string) =>
-    get<{ mermaid: string }>(`${run(r)}/mermaid${name ? `?name=${encodeURIComponent(name)}` : ""}`).then((m) => m.mermaid),
-  tree: (r: string, node: number | null) => get<TreeItem[]>(`${run(r)}/tree${node == null ? "" : `?node=${node}`}`),
-  group: (r: string, node: number | null, code: number, offset: number, limit: number) =>
-    get<CallNode[]>(`${run(r)}/tree?${node == null ? "" : `node=${node}&`}code=${code}&offset=${offset}&limit=${limit}`),
-  call: (r: string, id: number) => get<CallDetail>(`${run(r)}/calls/${id}`),
-  bindings: (r: string, id: number) => get<Binding[]>(`${run(r)}/calls/${id}/bindings`),
   path: (r: string, id: number) => get<CallNode[]>(`${run(r)}/calls/${id}/path`),
   value: (r: string, id: number) => get<Value>(`${run(r)}/values/${id}`),
   object: (r: string, oid: number) => get<ObjectFlow>(`${run(r)}/objects/${oid}`),
-  objects: (r: string) => get<ObjectSummary[]>(`${run(r)}/objects`),
   error: (r: string) => get<ErrorPath | null>(`${run(r)}/error`),
-  source: (r: string, fileId: number) => get<Source>(`${run(r)}/source/${fileId}`),
-  map: () => get<RouteMap>("/api/map"),
-  compare: (a: string, b: string) => get<RunDiff>(`/api/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`),
-  search: (r: string, q: string) => get<Hit[]>(`${run(r)}/search?q=${encodeURIComponent(q)}`),
   timeline: (r: string, at: { offset?: number; endOf?: number; seq?: number }, limit = 500) =>
     get<TimelinePage>(`${run(r)}/timeline?limit=${limit}&${at.endOf != null ? `end_of=${at.endOf}`
       : at.seq != null ? `seq=${at.seq}` : `offset=${at.offset ?? 0}`}`),
@@ -362,6 +184,7 @@ export interface Step {
   file: string | null;
   first_line: number | null;
   values: StepValue[];
+  callback?: Callback;  // not called by its name (inferred)
   exception?: { type: string; message: string; origin: boolean; line: number | null } | null;
 }
 
@@ -370,12 +193,13 @@ export interface TimelinePage {
   offset: number;
   steps: Step[];
   raises: number[];  // the steps where a call raised
+  start: number;  // the first call that is not an import or a class body: where the program's work begins
 }
 
 export interface CallGraph {
   nodes: { code_id: number; qualname: string; module: string | null; kind: string; observed: boolean; calls: number;
     first_seq: number; raised: number }[];
-  edges: { source: number; target: number; calls: number; first_seq: number }[];
+  edges: { source: number; target: number; calls: number; first_seq: number; callback: Pick<Callback, "by" | "via" | "line"> | null }[];
 }
 
 /** One value a watched variable had, and when. */
@@ -388,4 +212,16 @@ export interface Watched {
   object_id: number | null;
   value_id: number;
   type: string;
+}
+
+/** How a call happened when it was not by its name: a library called it back (`by`), or the caller ran a function
+ * it held (`line`, the caller's source line; `via`, where among the caller's arguments it was; `registered`, the
+ * first value it was seen in). */
+export interface Callback {
+  by?: string;
+  line?: string;
+  at?: number;
+  via?: string;
+  registered?: { call_id: number; qualname: string; seq: number; kind: string; path: string | null };
+  inferred: boolean;
 }
