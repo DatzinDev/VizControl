@@ -1,7 +1,7 @@
 import { Background, Controls, Edge, Handle, MarkerType, Node, NodeProps, Position, ReactFlow } from "@xyflow/react";
 import { useEffect, useState } from "react";
 import { StageDetail, StageFunction } from "./api";
-import { ms } from "./format";
+import { calls, ms } from "./format";
 import { layoutTree, TreeBox } from "./layout";
 import { CALL_H, CALL_W } from "./nodes";
 
@@ -117,7 +117,7 @@ export function ComponentView(props: {
     return { id, position: { x: r.x, y: r.y }, width: r.width, height: r.height, parentId, ...extra } as Node;
   };
   const nodes: Node[] = [
-    at("stage", undefined, { type: "box", selectable: false, data: { kind: "stage", label: `${detail.stage} · ${detail.stats.calls} calls · ${ms(detail.stats.total_ns)}` } }),
+    at("stage", undefined, { type: "box", selectable: false, data: { kind: "stage", label: `${detail.stage} · ${calls(detail.stats.calls)} · ${ms(detail.stats.total_ns)}` } }),
   ];
   for (const [m, classes] of modules) {
     const file = [...classes.values()][0][0].file;

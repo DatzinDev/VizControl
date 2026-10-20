@@ -76,7 +76,7 @@ export function RunInspector({ run, error, onOpenCall }: { run: RunSummary; erro
         </Section>
       )}
       <div className="box dashed muted" style={{ fontSize: 12 }}>
-        ┄ Stages are inferred from module paths (stage_depth, or [tool.vizcontrol.stages]). Double-click a stage to open it.
+        ┄ Stages are inferred from module paths (stage_depth), or from the functions the entry fans out to when the project has few modules; [tool.vizcontrol.stages] overrides both. Double-click a stage to open it.
       </div>
     </>
   );
