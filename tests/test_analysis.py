@@ -73,6 +73,19 @@ def test_object_flow_follows_the_order(runs):
     statuses = [ch for c in flow["changes"] for ch in c["changes"] if ch["path"] == ".status"]
     assert statuses[-1] == {"path": ".status", "op": "changed", "before": "'draft'", "after": "'paid'"}
     assert all(link["inferred"] for link in flow["links"])
+    assert flow["name"] == "order" and flow["type"] == "app.models.Order"
+    assert any("status" in a["changed"] and ["status", "'paid'"] in a["fields"] for a in flow["appearances"])
+
+
+def test_object_flow_finds_objects_nested_in_other_values(runs):
+    r = runs["basic"]
+    place = next(c for c in r.search("place_order")["functions"])
+    oid = next(b["object_id"] for b in r.bindings(place["call_id"]) if b["name"] == "customer")
+    flow = A.object_flow(r, oid)
+    nested = [(a["qualname"], a["name"], a["path"]) for a in flow["appearances"] if a["path"]]
+    assert ("compute", "order", ".customer") in nested and ("OrderRepo.add", "order", ".customer") in nested
+    assert flow["name"] == "customer"
+    assert flow["appearances"][0]["fields"] == [] and flow["appearances"][1]["changed"] == ["email", "id", "tier"]
 
 
 def test_value_diff():
