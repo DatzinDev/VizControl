@@ -23,7 +23,8 @@ def _duration(c: dict) -> int | None:
 def call_node(c: dict, stage: str | None = None) -> dict:
     """The JSON shape of one call, as the viewer receives it."""
     return {
-        "type": "call", "id": c["id"], "parent_id": c["parent_id"], "qualname": c["qualname"], "module": c["module"],
+        "type": "call", "id": c["id"], "parent_id": c["parent_id"], "code_id": c["code_id"], "qualname": c["qualname"],
+        "module": c["module"],
         "kind": c["kind"], "observed": bool(c["observed"]), "outcome": c["outcome"], "start_ns": c["start_ns"],
         "duration_ns": _duration(c), "end_exact": bool(c["end_exact"]), "children": c["children"],
         "depth": c["depth"], "seq": c["seq_start"], "call_line": c["call_line"], "exception_id": c["exception_id"],
