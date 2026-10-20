@@ -76,7 +76,8 @@ def _summary(runs: Runs, run_id: str) -> dict:
         run = r.run()
     except Exception as e:  # one broken file must not hide the others
         return {"id": run_id, "error": str(e)}
-    return {"id": run_id, "kind": run["kind"], "target": run["target"], "args": run["argv"][1:] if run["kind"] in ("script", "module") else [], "outcome": run["outcome"],
+    args = run["argv"][1:] if run["kind"] in ("script", "module") else []  # pytest's argv is noise next to a node id
+    return {"id": run_id, "kind": run["kind"], "target": run["target"], "args": args, "outcome": run["outcome"],
             "exit_code": run["exit_code"], "started": run["started_wall"],
             "duration_ns": run["ended_ns"] - run["started_ns"] if run["ended_ns"] else None,
             "calls": r.counts()["call"], "truncated": run["truncated"], "level": run["config"].get("level")}
@@ -178,8 +179,31 @@ def _placeholder(runs: Runs) -> bytes:
             f"<p>The viewer is not built yet. API:</p><ul>{rows}</ul>").encode()
 
 
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
+
+# The viewer is static files plus same-origin fetches: nothing else may load or embed it.
+SECURITY_HEADERS = {
+    "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; "
+    "form-action 'none'; frame-ancestors 'none'",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Cross-Origin-Resource-Policy": "same-origin",
+}
+
+
+def _host_name(header: str | None) -> str:
+    """The host part of a Host header: "localhost:7171" -> "localhost", "[::1]:7171" -> "::1"."""
+    header = (header or "").strip().lower()
+    if header.startswith("["):
+        return header[1:header.find("]")] if "]" in header else ""
+    return header.rsplit(":", 1)[0] if header.count(":") == 1 else header
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "VizControl"
+    sys_version = ""
 
     def log_message(self, format, *args):  # quiet: the terminal belongs to the user
         pass
@@ -189,6 +213,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for name, value in SECURITY_HEADERS.items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -196,6 +222,11 @@ class Handler(BaseHTTPRequestHandler):
         self._send(status, json.dumps(data, default=str).encode(), "application/json")
 
     def do_GET(self):
+        # DNS rebinding: a web page can point its own domain at 127.0.0.1 and read the traces through the
+        # victim's browser. A loopback server only answers requests addressed to a loopback name.
+        if self.server.allowed_hosts and _host_name(self.headers.get("Host")) not in self.server.allowed_hosts:
+            self._json(HTTPStatus.FORBIDDEN, {"error": "forbidden_host", "message": "unexpected Host header"})
+            return
         url = urlsplit(self.path)
         runs: Runs = self.server.runs
         if url.path.startswith("/api/"):
@@ -240,6 +271,8 @@ def make_server(path: str | Path, host: str = "127.0.0.1", port: int = 7171) -> 
         raise OSError(f"no free port in {port}..{port + 19}")
     server.runs = runs
     server.daemon_threads = True
+    # ponytail: a server bound to a non-loopback address was exposed on purpose (with a warning); no Host check
+    server.allowed_hosts = LOOPBACK if host in LOOPBACK else ()
     return server
 
 

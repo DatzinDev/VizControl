@@ -87,3 +87,34 @@ def test_only_registered_runs_are_readable(base):
 def test_viewer_or_placeholder(base):
     status, ctype, body = get(base + "/")
     assert status == 200 and ctype.startswith("text/html") and b"VizControl" in body
+
+
+def raw_get(base, path, host):
+    """GET with an explicit Host header (urllib always sends the URL's host)."""
+    import http.client
+    from urllib.parse import urlsplit
+
+    url = urlsplit(base)
+    conn = http.client.HTTPConnection(url.hostname, url.port, timeout=10)
+    conn.request("GET", path, headers={"Host": host})
+    resp = conn.getresponse()
+    return resp.status, dict(resp.getheaders()), resp.read()
+
+
+@pytest.mark.parametrize("host", ["evil.example:7171", "attacker.test", "127.0.0.1.nip.io", ""])
+def test_dns_rebinding_hosts_are_rejected(base, host):
+    status, _, body = raw_get(base, "/api/runs", host)
+    assert status == 403 and b"forbidden_host" in body and b"basic.vizc" not in body
+
+
+@pytest.mark.parametrize("host", ["localhost:7171", "127.0.0.1", "[::1]:7171", "LOCALHOST"])
+def test_loopback_hosts_are_served(base, host):
+    assert raw_get(base, "/api/runs", host)[0] == 200
+
+
+def test_security_headers(base):
+    for path in ("/", "/api/runs"):
+        _, headers, _ = raw_get(base, path, "localhost")
+        assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
+        assert headers["X-Content-Type-Options"] == "nosniff"
+        assert "Python" not in headers["Server"]  # no interpreter version disclosed
