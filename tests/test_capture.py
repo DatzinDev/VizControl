@@ -226,6 +226,26 @@ def test_values_are_stored_once_and_hot_functions_keep_only_their_first(tmp_path
     assert [(g["kind"], g["detail"]) for g in r.gaps()] == [("limit_values_per_function", "square")]
 
 
+def pair(i):
+    yield square(i)
+    yield square(i + 1)
+
+
+def drop_generators():
+    for i in range(50):
+        g = pair(i)
+        next(g)  # then dropped while suspended: closed without any event, its frame's memory reused
+
+
+def test_generators_dropped_while_suspended_are_all_written(tmp_path):
+    with vizcontrol.trace(output=tmp_path / "gen.vizc") as t:
+        drop_generators()
+    r = Reader(t.path)
+    ids = {c[0] for c in r.all_calls()}
+    assert all(c[1] is None or c[1] in ids for c in r.all_calls())  # no call points to a parent never written
+    assert len(by_name(r, "pair")) == 50
+
+
 def test_sigterm_closes_run_as_unfinished(tmp_path):
     import signal
     import time
