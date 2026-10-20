@@ -255,6 +255,28 @@ def test_generators_dropped_while_suspended_are_all_written(tmp_path):
     assert len(by_name(r, "pair")) == 50
 
 
+def find_all(items, x):
+    found, i = [], 0
+    while True:
+        try:
+            i = items.index(x, i)  # ValueError ends the search: an exception as control flow
+        except ValueError:
+            return found
+        found.append(i)
+        i += 1
+
+
+def test_exceptions_as_control_flow_keep_only_their_function_s_first(tmp_path):
+    with vizcontrol.trace(output=tmp_path / "cf.vizc", values={"max_per_function": 3}) as t:
+        for _ in range(10):
+            find_all([1, 2, 1], 1)
+        lookup({}, "missing")
+    r = Reader(t.path)
+    excs = r.exceptions()
+    assert [e["type"] for e in excs].count("ValueError") == 3 and "KeyError" in [e["type"] for e in excs]
+    assert ("limit_exceptions_per_function", "find_all") in [(g["kind"], g["detail"]) for g in r.gaps()]
+
+
 def test_sigterm_closes_run_as_unfinished(tmp_path):
     import signal
     import time

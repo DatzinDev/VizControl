@@ -112,7 +112,7 @@ CREATE TABLE gap (                   -- explicit "not captured" facts (NFR-OBS)
   id      INTEGER PRIMARY KEY,
   call_id INTEGER REFERENCES call(id),
   seq     INTEGER NOT NULL,
-  kind    TEXT NOT NULL,             -- limit_calls | limit_depth | limit_values | limit_values_per_function (detail: its qualname) | thread_skipped | tracer_error
+  kind    TEXT NOT NULL,             -- limit_calls | limit_depth | limit_values | limit_values_per_function, limit_exceptions_per_function (detail: its qualname) | thread_skipped | tracer_error
   detail  TEXT
 );
 

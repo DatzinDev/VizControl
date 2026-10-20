@@ -68,12 +68,13 @@ class Rec:
 
 
 class ExcEntry:
-    __slots__ = ("obj", "id", "call_id", "line", "value_id", "handler", "done")
+    __slots__ = ("obj", "id", "call_id", "line", "value_id", "handler", "done", "light")
 
     def __init__(self, obj, id, call_id, line):
         self.obj, self.id, self.call_id, self.line = obj, id, call_id, line
         self.value_id = self.handler = None
         self.done = False  # caught; becomes final unless the same object is re-raised (with-blocks, bare raise)
+        self.light = False  # past its function's first exceptions: no value, and not written if caught where raised
 
 
 def _code_kind(code: CodeType) -> str:
@@ -130,6 +131,7 @@ class Tracer:
         self.max_items = config.values.max_items
         self.max_per_function = config.values.max_per_function
         self._per_function: dict[int, int] = {}  # code id -> calls so far
+        self._raised_in: dict[int, int] = {}  # code id -> exceptions raised in it so far
         self._stored: dict[tuple, int] = {}  # encoded value -> its row: a value seen again is not stored again
         self._stored_bytes = 0
         self.flush_every = flush_every
@@ -641,7 +643,13 @@ class Tracer:
             rec = stack[-1] if stack and stack[-1].frame == fid and not stack[-1].opaque else None
             call_id = rec.id if rec else None
             entry = self._exc[id(exc)] = ExcEntry(exc, self.w.new_id("exception"), call_id, frame.f_lineno)
-            if self.values:
+            cid = self._codes[id(code)]
+            raised = self._raised_in[cid] = self._raised_in.get(cid, 0) + 1
+            if raised > self.max_per_function:  # exceptions as control flow (list.index in a loop)
+                entry.light = True
+                if raised == self.max_per_function + 1:
+                    self._gap(call_id, "limit_exceptions_per_function", code.co_qualname)
+            elif self.values:
                 seq = self._seq()
                 e = self.enc.encode(exc)
                 entry.value_id = self.w.new_id("value")
@@ -680,6 +688,9 @@ class Tracer:
 
     def _write_exc(self, entry: ExcEntry, handled_call_id: int | None) -> None:
         exc = entry.obj
+        if entry.light and handled_call_id is not None and handled_call_id == entry.call_id:
+            entry.obj = None  # raised and caught in one call, past its function's first: nothing refers to it
+            return
         tb, frames = exc.__traceback__, []
         while tb is not None:
             co = tb.tb_frame.f_code
