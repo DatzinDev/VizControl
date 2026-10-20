@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 import vizcontrol
+from vizcontrol import analysis as A
 from vizcontrol.store import Reader
 
 SHOP = Path(__file__).parent / "samples" / "shop"
@@ -246,3 +247,22 @@ def test_nested_trace_marks_a_region_in_the_active_run(tmp_path):
     inside = [c for c in by_name(r, "recurse") if region["seq_start"] < c["seq_start"] < region["seq_end"]]
     assert len(inside) == 3 and len(by_name(r, "recurse")) == 5
     assert list(tmp_path.iterdir()) == [tmp_path / "o.vizc"]  # one run, not two
+
+
+def test_threads_are_linked_to_the_start_call_that_launched_them(tmp_path):
+    def job():
+        ts = [threading.Thread(target=recurse, args=(i,)) for i in range(3)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+
+    with vizcontrol.trace("threads", output=tmp_path / "t.vizc") as t:
+        job()
+    r = Reader(t.path)
+    links = A.thread_starts(r)
+    assert len(links) == 3 and len(set(links.values())) == 3
+    for thread_id, start_id in links.items():
+        start = r.call(start_id)
+        assert start["qualname"] == "Thread.start" and start["thread_id"] != thread_id
+        assert r.call(start["parent_id"])["qualname"].endswith("job")

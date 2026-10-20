@@ -259,7 +259,10 @@ export function CallInspector(props: {
       <Section title="Location">
         <KV rows={[
           ["file", call.file ? `${call.file}:${call.first_line ?? ""}` : "—"],
-          ["caller", call.caller ? <button className="link" onClick={() => onOpenCall(call.caller!.id)}>{call.caller.qualname}{call.caller.line ? ` (line ${call.caller.line})` : ""}</button> : "— (root)"],
+          ["caller", call.caller ? <button className="link" onClick={() => onOpenCall(call.caller!.id)}>{call.caller.qualname}{call.caller.line ? ` (line ${call.caller.line})` : ""}</button>
+            : call.started_by ? <button className="link" onClick={() => onOpenCall(call.started_by!.caller_id ?? call.started_by!.id)}
+                title="Inferred: matched to the Thread.start call by time">┄ thread started by {call.started_by.caller ?? "Thread.start"}</button>
+            : "— (root)"],
           ["stage", call.stage ?? "—"],
           ["thread", `${call.thread_id} · seq ${call.seq}`],
         ]} />
