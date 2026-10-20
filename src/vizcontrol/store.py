@@ -165,10 +165,7 @@ class Reader:
         return {t: self._one(f"SELECT COUNT(*) AS n FROM {t}")["n"] for t in COLUMNS}
 
     def call(self, call_id: int) -> dict | None:
-        return self._one(
-            "SELECT call.*, code.qualname, code.module, code.kind, code.observed, code.first_line, file.path "
-            "FROM call JOIN code ON code.id = call.code_id LEFT JOIN file ON file.id = code.file_id "
-            "WHERE call.id = ?", (call_id,))
+        return self._one(f"SELECT {self._CALL_COLS} {self._CALL_FROM} WHERE call.id = ?", (call_id,))
 
     def children(self, call_id: int | None, offset: int = 0, limit: int = 200) -> list[dict]:
         where = "call.parent_id IS NULL" if call_id is None else "call.parent_id = ?"
@@ -176,6 +173,72 @@ class Reader:
         return self._all(
             "SELECT call.*, code.qualname, code.module, code.observed FROM call JOIN code ON code.id = call.code_id "
             f"WHERE {where} ORDER BY call.seq_start LIMIT ? OFFSET ?", (*args, limit, offset))
+
+    _CALL_COLS = ("call.*, code.qualname, code.module, code.kind, code.observed, code.first_line, code.file_id, "
+                  "file.relpath, file.path")
+    _CALL_FROM = "FROM call JOIN code ON code.id = call.code_id LEFT JOIN file ON file.id = code.file_id"
+
+    def grouped_children(self, call_id: int | None) -> list[dict]:
+        """Children of a call grouped by code: one row per code with count, first call and outcome summary."""
+        where = "parent_id IS NULL" if call_id is None else "parent_id = ?"
+        args = () if call_id is None else (call_id,)
+        return self._all(
+            "SELECT code_id, COUNT(*) AS count, MIN(seq_start) AS first_seq, MIN(id) AS first_id, "
+            "SUM(outcome = 'raised') AS raised, SUM(outcome = 'unfinished') AS unfinished, "
+            "SUM(COALESCE(end_ns - start_ns, 0)) AS total_ns "
+            f"FROM call WHERE {where} GROUP BY code_id ORDER BY first_seq", args)
+
+    def calls(self, ids: list[int]) -> list[dict]:
+        if not ids:
+            return []
+        marks = ", ".join("?" * len(ids))
+        return self._all(f"SELECT {self._CALL_COLS} {self._CALL_FROM} WHERE call.id IN ({marks}) "
+                         "ORDER BY call.seq_start", ids)
+
+    def group_members(self, call_id: int | None, code_id: int, offset: int = 0, limit: int = 200) -> list[dict]:
+        where = "call.parent_id IS NULL" if call_id is None else "call.parent_id = ?"
+        args = () if call_id is None else (call_id,)
+        return self._all(f"SELECT {self._CALL_COLS} {self._CALL_FROM} WHERE {where} AND call.code_id = ? "
+                         "ORDER BY call.seq_start LIMIT ? OFFSET ?", (*args, code_id, limit, offset))
+
+    def ancestors(self, call_id: int) -> list[dict]:
+        """The call and its ancestors, root first."""
+        rows = self._all(
+            "WITH RECURSIVE up(id, n) AS (SELECT ?, 0 UNION ALL "
+            "SELECT call.parent_id, up.n + 1 FROM call JOIN up ON call.id = up.id WHERE call.parent_id IS NOT NULL) "
+            f"SELECT {self._CALL_COLS} {self._CALL_FROM} JOIN up ON up.id = call.id ORDER BY up.n DESC", (call_id,))
+        return rows
+
+    def all_calls(self) -> list[tuple]:
+        """(id, parent_id, start_ns, end_ns, outcome, seq_start, module, observed) for every call, in seq order."""
+        return self.db.execute(
+            "SELECT call.id, call.parent_id, call.start_ns, call.end_ns, call.outcome, call.seq_start, code.module, "
+            "code.observed FROM call JOIN code ON code.id = call.code_id ORDER BY call.seq_start").fetchall()
+
+    def object_bindings(self, object_id: int) -> list[dict]:
+        return self._all(
+            "SELECT binding.call_id, binding.seq, binding.kind, binding.name, binding.line, binding.value_id, "
+            "value.data, code.qualname FROM value JOIN binding ON binding.value_id = value.id "
+            "JOIN call ON call.id = binding.call_id JOIN code ON code.id = call.code_id "
+            "WHERE value.object_id = ? ORDER BY binding.seq", (object_id,))
+
+    def search(self, text: str, limit: int = 100) -> dict[str, list[dict]]:
+        like = f"%{text}%"
+        return {
+            "functions": self._all(
+                "SELECT code.id AS code_id, code.qualname, code.module, code.observed, COUNT(call.id) AS count, "
+                "MIN(call.id) AS call_id FROM code JOIN call ON call.code_id = code.id "
+                "WHERE code.qualname LIKE ? OR code.module LIKE ? GROUP BY code.id ORDER BY count DESC LIMIT ?",
+                (like, like, limit)),
+            "variables": self._all(
+                "SELECT binding.name, binding.kind, binding.call_id, value.data FROM binding "
+                "JOIN value ON value.id = binding.value_id WHERE binding.name LIKE ? ORDER BY binding.seq LIMIT ?",
+                (like, limit)),
+            "values": self._all(
+                "SELECT binding.name, binding.kind, binding.call_id, value.data FROM binding "
+                "JOIN value ON value.id = binding.value_id WHERE value.data LIKE ? ORDER BY binding.seq LIMIT ?",
+                (like, limit)),
+        }
 
     def bindings(self, call_id: int) -> list[dict]:
         return self._all(
@@ -190,6 +253,9 @@ class Reader:
 
     def exceptions(self) -> list[dict]:
         return self._all("SELECT * FROM exception ORDER BY id")
+
+    def exception(self, exception_id: int) -> dict | None:
+        return self._one("SELECT * FROM exception WHERE id = ?", (exception_id,))
 
     def gaps(self) -> list[dict]:
         return self._all("SELECT * FROM gap ORDER BY seq")
