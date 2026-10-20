@@ -8,11 +8,16 @@ pip install vizcontrol
 vizcontrol run app.py --some-flag     # writes .vizcontrol/runs/<time>-app.vizc
 pytest --vizcontrol                   # or: one trace per test
 vizcontrol serve                      # explore the runs in the browser
-vizcontrol info .vizcontrol/runs/<file>.vizc
+vizcontrol diagram <run>.vizc         # the run's stages as a Mermaid flowchart
+vizcontrol diff <a>.vizc <b>.vizc     # where two runs split and which results differ
 ```
 
-A failed run opens on its failure: the error path in red, the exception, the locals where it was raised and the
-last observed changes to the objects involved.
+Start with [Understanding a project you didn't write](https://github.com/DatzinDev/VizControl/blob/main/docs/guide.md),
+or try `vizcontrol run examples/pipeline.py --bad` and `vizcontrol serve`.
+
+The viewer goes from the whole project (a map of every run's route) down to stages, functions, calls and values;
+follows an object through the calls that touched it; and opens a failed run on its failure, with what a passing
+run reached and this one didn't.
 
 ```python
 import vizcontrol
