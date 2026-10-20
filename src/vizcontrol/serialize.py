@@ -226,15 +226,18 @@ class Encoder:
         if isinstance(d, dict):
             for k, v in itertools.islice(dict.items(d), self.max_items):
                 attrs[k] = v
+        has_slots = False
         for cls in t.__mro__:
-            for slot in cls.__dict__.get("__slots__", ()):
+            slots = cls.__dict__.get("__slots__", ())
+            for slot in (slots,) if isinstance(slots, str) else slots:
+                has_slots = True
                 desc = cls.__dict__.get(slot)
                 if isinstance(desc, types.MemberDescriptorType) and slot not in attrs:
                     try:
                         attrs[slot] = desc.__get__(obj, t)
                     except AttributeError:
                         pass
-        if d is None and not attrs:
+        if d is None and not has_slots and not attrs:
             return {"t": "opaque", "type": type_name(t), "oid": seen[id(obj)]}
         return {"t": "obj", "type": type_name(t), "oid": seen[id(obj)],
                 "attrs": {k: self._enc(v, depth + 1, k, seen) for k, v in attrs.items()}}
