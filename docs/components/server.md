@@ -37,6 +37,7 @@ All responses are JSON. Lists are paged with `offset`/`limit`. Fields derived by
 | `GET /api/runs` | Run summaries: id, target, kind, outcome, started, duration, calls, truncated, plus `max_depth` and `cut_calls` (where `max_calls` stopped tracing) so the viewer can mark cut nodes. | `Reader.run` |
 | `GET /api/runs/{run}` | Full run metadata and config. | `Reader.run` |
 | `GET /api/runs/{run}/stages` | Stage graph + main path (Level 1). | `analysis.stages` |
+| `GET /api/runs/{run}/mermaid[?name=]` | Level 1, or stage `name` opened, as Mermaid text (`{"mermaid": ...}`); the viewer's "Copy as Mermaid". Same 404 rule as `/stage`. | `diagram.stages`, `diagram.stage` |
 | `GET /api/runs/{run}/stage?name=` | One stage opened into module › class › function (Level 2). 404 unless `name` is a stage of the run, so only real stages are cached. | `analysis.stage_detail` |
 | `GET /api/runs/{run}/tree?node=&depth=&limit=` | Tree slice with aggregated groups (Levels 2–3). Roots when `node` is omitted. `depth` ≤ 4. | `analysis.subtree` |
 | `GET /api/runs/{run}/tree?node=&code=&offset=&limit=` | Members of one `×N` group, paged. | `analysis.group_members` |

@@ -69,6 +69,10 @@ def test_navigation_endpoints(base):
     assert any(f["qualname"] == "OrderService.place_order" for f in stage["functions"])
     status, _ = api(base, "/api/runs/basic.vizc/stage?name=nope")
     assert status == 404
+    _, l1 = api(base, "/api/runs/basic.vizc/mermaid")
+    _, l2 = api(base, "/api/runs/basic.vizc/mermaid?name=app.services")
+    assert l1["mermaid"].startswith("flowchart LR") and "OrderService" in l2["mermaid"]
+    assert api(base, "/api/runs/basic.vizc/mermaid?name=nope")[0] == 404
     _, hits = api(base, "/api/runs/basic.vizc/search?q=place_order")
     assert hits and hits[0]["kind"] == "function"
 

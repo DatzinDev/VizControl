@@ -69,6 +69,10 @@ leads to the most calls (the subtree size of the calls crossing it; time only br
 path. Counts are deterministic, while timings are noise in small runs (a time-based rule flipped between CI runs). That is the `Request → Controller → Service → ... → Response`
 line of Level 1.
 
+`vizcontrol diagram` (and `GET /api/runs/{run}/mermaid`) writes Level 1, or one stage opened as Level 2, as a
+Mermaid flowchart (`vizcontrol.diagram`): the main path drawn thick, raised stages red, libraries dashed, and in
+Level 2 module › class subgraphs with neighbouring stages as single nodes.
+
 ### One stage opened, Level 2 (FR-VIZ-2)
 
 `stage_detail` makes one pass over all calls, with the same stage names as Level 1:

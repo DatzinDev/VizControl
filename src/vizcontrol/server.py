@@ -20,6 +20,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from vizcontrol import analysis as A
+from vizcontrol import diagram as D
 from vizcontrol.serialize import preview
 from vizcontrol.store import Reader
 
@@ -67,7 +68,7 @@ class Runs:
 
     def cached(self, run_id: str, fn, *args):
         reader = self.reader(run_id)
-        key = (run_id, fn.__name__, *args)
+        key = (run_id, fn, *args)
         if key not in self._cache:
             self._cache[key] = fn(reader, *args)
         return self._cache[key]
@@ -146,10 +147,14 @@ def api(runs: Runs, path: str, q: dict):
         return {**_summary(runs, run_id), "run": r.run(), "counts": r.counts()}
     if rest == "/stages":
         return runs.cached(run_id, A.stages)
-    if rest == "/stage":
-        name = q.get("name", [""])[0]
+    if rest in ("/stage", "/mermaid"):
+        name = q.get("name", [None])[0]
+        if rest == "/mermaid" and name is None:  # `vizcontrol diagram`, for the viewer's copy button
+            return {"mermaid": runs.cached(run_id, D.stages)}
         if name not in {n["name"] for n in runs.cached(run_id, A.stages)["nodes"]}:  # only real stages get cached
             raise NotFound(f"no stage {name!r}")
+        if rest == "/mermaid":
+            return {"mermaid": runs.cached(run_id, D.stage, name)}
         return runs.cached(run_id, A.stage_detail, name)
     if rest == "/tree":
         node, code = _int(q, "node", None, 1, 1 << 62), _int(q, "code", None, 1, 1 << 62)
