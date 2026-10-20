@@ -43,7 +43,8 @@ All responses are JSON. Lists are paged with `offset`/`limit`. Fields derived by
 | `GET /api/runs/{run}/calls/{id}/bindings` | Args, return, snapshots (value ids + previews). | `Reader.bindings` |
 | `GET /api/runs/{run}/calls/{id}/path` | Ancestors to root, for breadcrumbs and "reveal in tree". | `Reader` |
 | `GET /api/runs/{run}/values/{id}` | Full value tree (Level 4). | `Reader.value` |
-| `GET /api/runs/{run}/objects/{oid}` | Object appearances, flow links, changes. | `analysis.object_flow` |
+| `GET /api/runs/{run}/objects?limit=` | The run's most seen objects (top-level bindings), named after their first binding that isn't `self`. `limit` ≤ 500. | `Reader.objects` |
+| `GET /api/runs/{run}/objects/{oid}` | Object appearances (nested ones included), flow links, changes. | `analysis.object_flow` |
 | `GET /api/runs/{run}/error` | Error path, or `null`. | `analysis.error_path` |
 | `GET /api/runs/{run}/source/{file_id}` | `{path, relpath, sha256, source}`; `source` is null if not stored. | `Reader.file` |
 | `GET /api/runs/{run}/search?q=` | Hits linking to call ids. | `analysis.search` |

@@ -76,10 +76,16 @@ failure.
 
 ### Data flow (FR-ANA-4/6)
 
-Built on `value.object_id` (top-level bindings only in v1; an object nested inside another value is not found):
+Built on the oids in stored value trees. An object is found when it is the bound value or sits anywhere inside it
+(`order.customer`): the reader prefilters values whose JSON holds `"oid":N` followed by `,` or `}`, and analysis
+walks each tree to the object's full encoding (a repeat in the same value is a `ref` and is skipped). The prefilter
+scans the value table; an oid index written at capture is the upgrade if that gets slow.
 
-- **Appearances**: every binding whose value (or a nested node) carries the oid, in `seq` order, with the call and
-  role (`arg`, `return`, `local`, `attr-of`).
+- **Appearances**: every binding whose value (or a nested node) carries the oid, in `seq` order, with the call,
+  module, role (`arg`, `return`, `self`, `local`, ...), the `path` inside the bound value (empty for the value
+  itself), the object's first fields and the fields that changed since the previous full encoding. A
+  depth-truncated encoding is an appearance but is not diffed. The response caps appearances at 200 and gives
+  `total`.
 - **Links**: consecutive appearances in different calls become a flow edge: producer → consumer.
   - `return` of A then `arg` of B: a handoff.
   - `arg` of A, then `arg` of a child of A: a pass-down.
