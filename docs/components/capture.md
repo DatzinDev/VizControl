@@ -135,7 +135,10 @@ reference while in flight (exceptions don't support weakrefs):
 - `StopIteration`, `StopAsyncIteration` and `GeneratorExit` are not recorded: they are how generators and
   coroutines end, and `await` catches the StopIteration that carries a result in C, with no `EXCEPTION_HANDLED`,
   so it would look escaped.
-- The message is `BaseException.__str__` when all args are simple types, so no user `__str__` runs.
+- The message never runs the project's own `__str__`: it is `BaseException.__str__` when all args are simple
+  types. An exception whose `__str__` is a library's or builtin (pydantic's `ValidationError`, `subprocess`'s
+  `CalledProcessError`) gets that `__str__` when its args are not simple or empty, since that is where the
+  message is.
   `__cause__`/`__context__` link through `cause_id`. The traceback is stored as JSON without VizControl/runpy
   frames.
 

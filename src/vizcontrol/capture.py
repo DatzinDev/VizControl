@@ -112,10 +112,18 @@ def _excluded_prefixes() -> tuple[str, ...]:
     return tuple(os.path.abspath(p) + os.sep for p in paths if p) + (_PKG_DIR,)
 
 
-def _message(exc: BaseException) -> str:
-    """str(exc) without running user __str__ methods (on the exception or on its args)."""
+def _message(exc: BaseException, library_str: bool) -> str:
+    """str(exc) without running the project's own __str__ methods (on the exception or on its args). A library's
+    exception (`library_str`: its __str__ is not project code) gets its own __str__, which is where pydantic and
+    similar put the message."""
     args = BaseException.args.__get__(exc)
-    if all(type(a) in (str, int, float, bool, type(None), bytes) for a in args):
+    simple = all(type(a) in (str, int, float, bool, type(None), bytes) for a in args)
+    if library_str and (not simple or not args) and type(exc).__str__ is not BaseException.__str__:
+        try:
+            return str(exc)
+        except Exception:
+            pass
+    if simple:
         return BaseException.__str__(exc)
     return ", ".join(type_name(type(a)) for a in args)
 
@@ -705,7 +713,9 @@ class Tracer:
         cause = exc.__cause__ or exc.__context__
         hit = self._resolved.get(id(cause)) if cause is not None else None
         cause_id = hit[0] if hit and hit[1] is type(cause) else None
-        message, _ = self.enc.scrub(_message(exc)[: self.cfg.values.max_str])
+        own = getattr(type(exc).__str__, "__code__", None)  # a Python __str__: is it the project's?
+        library = own is None or not self._included(own.co_filename, type(exc).__module__)
+        message, _ = self.enc.scrub(_message(exc, library)[: self.cfg.values.max_str])
         self.w.add("exception", (entry.id, type_name(type(exc)), message, entry.call_id, entry.line,
                                  handled_call_id, cause_id, json.dumps(frames), entry.value_id))
         self._resolved[id(exc)] = (entry.id, type(exc))
