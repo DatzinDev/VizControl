@@ -119,6 +119,21 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .stage.dim { opacity: 0.75; }
 .react-flow__handle { opacity: 0; pointer-events: none; }
 
+/* data flow */
+.step { width: 190px; padding: 8px 10px; border-radius: 6px; background: var(--surface); border: 1px solid var(--flow); display: flex; flex-direction: column; gap: 3px; font-family: var(--mono); font-size: 11px; cursor: pointer; }
+.step:hover { box-shadow: 0 0 10px color-mix(in srgb, var(--flow) 40%, transparent); }
+.step .head { font-family: var(--font); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.step .q { font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.step .field { display: flex; gap: 6px; white-space: nowrap; }
+.step .field .d { width: 1ch; }
+.step .field .k { color: var(--muted); }
+.step .field.unfinished .k { color: inherit; }
+.step .field .v { overflow: hidden; text-overflow: ellipsis; }
+.lane { width: 100%; height: 100%; border-radius: 8px; background: color-mix(in srgb, var(--surface) 55%, transparent); padding: 10px 12px; font-size: 11px; }
+.react-flow__node-lane { pointer-events: none; }
+.picker { max-width: 560px; margin: 56px auto; display: flex; flex-direction: column; gap: 6px; padding: 0 16px; }
+button.oid:hover { outline: 1px solid var(--flow); }
+
 /* inspector */
 .title-lg { font-family: var(--mono); font-size: 16px; font-weight: 600; word-break: break-all; }
 .section { display: flex; flex-direction: column; gap: 6px; }
