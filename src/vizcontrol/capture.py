@@ -17,6 +17,7 @@ import sysconfig
 import threading
 import time
 import types
+from contextvars import ContextVar
 from types import BuiltinFunctionType, CodeType, FunctionType, MethodType
 
 from vizcontrol.config import Config
@@ -33,6 +34,17 @@ _MISSING = object()
 _PKG_DIR = os.path.dirname(os.path.abspath(__file__)) + os.sep
 _C_DESCRIPTORS = (types.MethodDescriptorType, types.WrapperDescriptorType, types.MethodWrapperType,
                   types.ClassMethodDescriptorType)
+# The innermost traced call of the running context, as (call id, depth, tracer). asyncio copies the context into
+# every task it creates, and executors into their jobs, so the first call of a task finds who created it: its
+# logical caller. The tracer tells a link of this run from a stale one left by an earlier run.
+CALLER: ContextVar[tuple | None] = ContextVar("vizcontrol_caller", default=None)
+# The run a scoped trace() belongs to (one request among concurrent ones): set in that context only.
+SCOPE: ContextVar[object] = ContextVar("vizcontrol_scope", default=None)
+
+# How generators and coroutines end and hand back results: `await` catches a StopIteration in C, with no
+# EXCEPTION_HANDLED event, so it would look like an exception that escaped. They are control flow, not failures.
+_CONTROL_FLOW = (StopIteration, StopAsyncIteration, GeneratorExit)
+
 CO_OPTIMIZED, CO_VARARGS, CO_VARKEYWORDS, CO_GENERATOR, CO_COROUTINE, CO_ASYNC_GENERATOR = (
     0x01, 0x04, 0x08, 0x20, 0x80, 0x200)
 
@@ -134,6 +146,7 @@ class Tracer:
         self.truncated: list[str] = []
         self.tool: int | None = None
         self._failed = False
+        self.scoped = False  # record only code running in this run's context (SCOPE), not the rest of the process
 
     # -- lifecycle --------------------------------------------------------------------------------------------
     def _callbacks(self) -> dict[int, object]:
@@ -364,8 +377,20 @@ class Tracer:
                 parent = stack[-1] if stack else None
                 if parent is not None:
                     parent.children -= 1
+            link = CALLER.get()
+            if parent is None or parent.opaque or parent.id is None or link is None or link[0] != parent.id:
+                # Off the fast path (the stack's top call is the context's caller): check the context.
+                if link is not None and link[2] is not self:
+                    link = None  # left by an earlier run
+                caller = next((r.id for r in reversed(stack) if not r.opaque and r.id is not None), None)
+                if (link[0] if link else None) != caller:
+                    # The running context is not the one this thread's stack was built in: a task or an executor
+                    # job. Its context says which call started it (asyncio.run's own frame may still be on the stack).
+                    parent = None
+                if (caller is None or parent is None) and self.scoped and SCOPE.get() is not self:
+                    return  # another request or job running beside this run's: not part of it
             if parent is None:
-                depth, parent_id, line = 0, None, None
+                depth, parent_id, line = (link[1] + 1, link[0], None) if link else (0, None, None)
             else:
                 if parent.id is None or parent.depth >= self.max_depth:
                     if parent.id is not None and "limit_depth" not in self.truncated:
@@ -385,6 +410,7 @@ class Tracer:
             rec = Rec(self._new_call_id(), id(frame), depth, False, parent_id, _get_ident(), cid, line,
                       self._seq(), _now())
             stack.append(rec)
+            CALLER.set((rec.id, depth, self))
             if self.values:
                 n = code.co_argcount + code.co_kwonlyargcount
                 n += bool(code.co_flags & CO_VARARGS) + bool(code.co_flags & CO_VARKEYWORDS)
@@ -417,6 +443,7 @@ class Tracer:
                     return
             if rec.id is None:
                 return
+            CALLER.set((rec.parent_id, rec.depth - 1, self) if rec.parent_id is not None else None)
             now, seq = _now(), self._seq()
             if self.values:
                 self._bind(rec.id, seq, "return", None, frame.f_lineno, retval)
@@ -450,6 +477,8 @@ class Tracer:
                 stack = self._new_stack()
                 if stack is None:
                     return
+            if self.scoped and SCOPE.get() is not self:
+                return  # made by another request or job running beside this run's
             fid = id(frame)
             if stack and stack[-1].opaque and stack[-1].frame == fid:
                 self._settle(stack, fid)
@@ -514,6 +543,8 @@ class Tracer:
             stack = self._new_stack()
         if stack is not None:
             stack.append(rec)
+            if rec.id is not None:
+                CALLER.set((rec.id, rec.depth, self))
 
     def _on_yield(self, code, offset, value):
         try:
@@ -535,6 +566,8 @@ class Tracer:
                 if rec is None:
                     return
             self._suspended[fid] = rec  # stays open; PY_RESUME pushes it back
+            top = stack[-1] if stack else None  # back in the code that consumed it (or the event loop)
+            CALLER.set((top.id, top.depth, self) if top is not None and top.id is not None else None)
             if rec.id is not None and self.values:
                 self._bind(rec.id, self._seq(), "yield", None, frame.f_lineno, value)
         except Exception as e:
@@ -551,6 +584,7 @@ class Tracer:
             rec = self._pop(stack, id(frame), "raised")
             if rec is None or rec.id is None:
                 return
+            CALLER.set((rec.parent_id, rec.depth - 1, self) if rec.parent_id is not None else None)
             now, seq = _now(), self._seq()
             if self.state:
                 self._bind_locals(rec.id, frame, seq, "local")
@@ -561,7 +595,7 @@ class Tracer:
 
     def _on_raise(self, code, offset, exc):
         try:
-            if not self._codes.get(code):
+            if not self._codes.get(code) or isinstance(exc, _CONTROL_FLOW):
                 return
             stack = self._stacks.get(_get_ident())
             if stack is None:
