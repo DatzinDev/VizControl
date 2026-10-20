@@ -273,6 +273,44 @@ def _main_path(roots: list[str], edges: dict[tuple[str, str], dict]) -> list[str
         path.append(max(nxt, key=lambda e: (e["calls_below"], e["total_ns"], -e["first_seq"]))["to"])
 
 
+def route_map(graphs: dict[str, dict], outcomes: dict[str, str]) -> dict:
+    """Level 1 over many runs (a test suite, requests to an app): every stage and stage edge that any run went
+    through, each with the runs that did, and each run's route. `graphs` are the runs' `stages()`, staged alike."""
+    nodes: dict[str, dict] = {}
+    edges: dict[tuple[str, str], dict] = {}
+    routes, entries = [], defaultdict(int)
+    for i, (run_id, g) in enumerate(graphs.items()):
+        for n in g["nodes"]:
+            m = nodes.get(n["name"])
+            if m is None:
+                m = nodes[n["name"]] = {**n, "calls": 0, "total_ns": 0, "self_ns": 0, "raised": 0, "unfinished": 0,
+                                        "modules": set(), "runs": [], "order": (i, n["first_seq"])}
+            for k in ("calls", "total_ns", "self_ns", "raised", "unfinished"):
+                m[k] += n[k]
+            m["modules"].update(n["modules"])
+            m["observed"] = m["observed"] or n["observed"]
+            m["runs"].append(run_id)
+        for e in g["edges"]:
+            m = edges.get((e["from"], e["to"]))
+            if m is None:
+                m = edges[(e["from"], e["to"])] = {**e, "calls": 0, "total_ns": 0, "calls_below": 0, "runs": [],
+                                                   "order": (i, e["first_seq"])}
+            for k in ("calls", "total_ns", "calls_below"):
+                m[k] += e[k]
+            m["runs"].append(run_id)
+        if g["main_path"]:
+            entries[g["main_path"][0]] += 1
+        routes.append({"run": run_id, "outcome": outcomes.get(run_id), "stages": [n["name"] for n in g["nodes"]],
+                       "edges": [[e["from"], e["to"]] for e in g["edges"]]})
+    for m in nodes.values():
+        m["modules"] = sorted(m["modules"])
+    main = _main_path(sorted(entries, key=lambda s: -entries[s]), edges)  # from the most common entry
+    ns, es = sorted(nodes.values(), key=lambda n: n["order"]), sorted(edges.values(), key=lambda e: e["order"])
+    for x in ns + es:
+        del x["order"]
+    return {"nodes": ns, "edges": es, "main_path": main, "routes": routes, "inferred": True}
+
+
 # -- threads --------------------------------------------------------------------------------------------------------
 
 def thread_starts(reader: Reader) -> dict[int, int]:

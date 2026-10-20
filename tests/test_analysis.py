@@ -118,8 +118,20 @@ def test_a_module_called_from_another_splits_at_the_functions_it_is_entered_by(t
     assert [n["name"] for n in A.stages(r, A.Stager(Reader(tmp_path / "two.vizc")).names)["nodes"]] == ["parse"]
     runs = Runs(tmp_path)  # served together, a run's heads are every run's heads
     assert runs.heads() == {("lib_a", "parse"), ("lib_a", "save")}
-    direct = next(n for n in api(runs, "/api/runs/direct.vizc/stages", {})["nodes"])
-    assert direct["name"] == "parse"
+    parse = next(n for n in api(runs, "/api/map", {})["nodes"] if n["name"] == "parse")
+    assert parse["runs"] == ["direct.vizc", "two.vizc"]
+
+
+def test_route_map_joins_the_runs(runs):
+    m = A.route_map({k: A.stages(r) for k, r in runs.items()}, {"basic": "ok", "vip": "raised"})
+    nodes = {n["name"]: n for n in m["nodes"]}
+    edges = {(e["from"], e["to"]): e["runs"] for e in m["edges"]}
+    assert nodes["app.services"]["runs"] == ["basic", "vip"] and nodes["json"]["runs"] == ["basic"]
+    assert nodes["app.pricing"]["raised"] >= 1 and nodes["app.repo"]["raised"] == 0  # summed over the runs
+    assert edges[("app.repo", "json")] == ["basic"] and edges[("app.pricing", "decimal")] == ["vip"]
+    assert m["main_path"][:3] == ["__main__", "app.api", "app.services"]
+    vip = next(x for x in m["routes"] if x["run"] == "vip")
+    assert vip["outcome"] == "raised" and "json" not in vip["stages"] and ["app.pricing", "decimal"] in vip["edges"]
 
 
 def test_subtree_groups_repeated_siblings(tmp_path):

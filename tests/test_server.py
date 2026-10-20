@@ -97,6 +97,12 @@ def test_compare(base):
     assert status == 404
 
 
+def test_route_map(base):
+    _, m = api(base, "/api/map")
+    assert [r["run"] for r in m["routes"]] == ["basic.vizc", "nested/vip.vizc"]
+    assert {n["name"]: n["runs"] for n in m["nodes"]}["json"] == ["basic.vizc"]
+
+
 def test_only_registered_runs_are_readable(base):
     for path in ("/api/runs/secret.txt", "/api/runs/..%2Fsecret.txt", "/api/runs/basic.vizc/calls/999999",
                  "/api/runs/basic.vizc/nope"):
