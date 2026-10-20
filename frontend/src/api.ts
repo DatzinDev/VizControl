@@ -282,6 +282,8 @@ export const api = {
   runs: () => get<RunSummary[]>("/api/runs"),
   stages: (r: string) => get<StageGraph>(`${run(r)}/stages`),
   stage: (r: string, name: string) => get<StageDetail>(`${run(r)}/stage?name=${encodeURIComponent(name)}`),
+  mermaid: (r: string, name?: string) =>
+    get<{ mermaid: string }>(`${run(r)}/mermaid${name ? `?name=${encodeURIComponent(name)}` : ""}`).then((m) => m.mermaid),
   tree: (r: string, node: number | null) => get<TreeItem[]>(`${run(r)}/tree${node == null ? "" : `?node=${node}`}`),
   group: (r: string, node: number | null, code: number, offset: number, limit: number) =>
     get<CallNode[]>(`${run(r)}/tree?${node == null ? "" : `node=${node}&`}code=${code}&offset=${offset}&limit=${limit}`),
