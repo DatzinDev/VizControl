@@ -102,7 +102,9 @@ readable run; with `pytest --vizcontrol` that is the map of the whole suite, one
 - **Edges**: caller code → callee code inside the stage, with a count.
 - **Incoming / outgoing**: calls crossing the stage boundary, per (caller stage, caller code, callee code) and
   per (caller code, callee stage).
-- **Stats**: modules, classes, functions, calls, the time of the calls entering the stage, and self time.
+- **Stats**: modules, classes, functions, calls, the time of the calls entering the stage, and self time (at most
+  the stage's time: a generator's span includes the time it sat suspended while its consumer ran, so its self time
+  is an upper bound).
 
 Every function of the stage is returned. Paging is the upgrade if a stage ever has thousands.
 
