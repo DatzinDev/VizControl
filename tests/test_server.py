@@ -6,7 +6,9 @@ import urllib.request
 
 import pytest
 
-from vizcontrol.server import make_server
+import vizcontrol
+from vizcontrol import server as S
+from vizcontrol.server import Runs, make_server
 
 
 @pytest.fixture(scope="module")
@@ -125,3 +127,18 @@ def test_security_headers(base):
         assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
         assert headers["X-Content-Type-Options"] == "nosniff"
         assert "Python" not in headers["Server"]  # no interpreter version disclosed
+
+
+def recurse(n):
+    return n if n == 0 else recurse(n - 1)
+
+
+def test_summary_says_where_capture_was_cut(tmp_path):
+    with vizcontrol.trace("deep", output=tmp_path / "deep.vizc", limits={"max_depth": 5}):
+        recurse(20)
+    with vizcontrol.trace("many", output=tmp_path / "many.vizc", limits={"max_calls": 8}):
+        recurse(20)
+    runs = Runs(tmp_path)
+    deep, many = S._summary(runs, "deep.vizc"), S._summary(runs, "many.vizc")
+    assert deep["max_depth"] == 5 and deep["truncated"] == ["limit_depth"] and deep["cut_calls"] == []
+    assert many["truncated"] == ["limit_calls"] and len(many["cut_calls"]) == 1
