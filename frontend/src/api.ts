@@ -16,7 +16,8 @@ export interface RunSummary {
   level: string;
   max_depth: number | null;
   cut_calls: number[];  // where max_calls stopped tracing
-  process_gone: boolean;  // never closed and its process no longer exists: killed (inferred)
+  process_gone: boolean;
+  regions: { id: number; name: string; call_id: number | null; seq_start: number; seq_end: number }[];  // nested trace() blocks  // never closed and its process no longer exists: killed (inferred)
   error?: string;
 }
 

@@ -59,6 +59,16 @@ export function RunInspector({ run, error, onOpenCall }: { run: RunSummary; erro
         <KV rows={[["duration", ms(run.duration_ns)], ["calls", run.calls.toLocaleString()], ["level", run.level], ["started", run.started.replace("T", " ").slice(0, 19)],
           ["truncated", run.truncated.length ? <span className="unfinished">{run.truncated.join(", ")}</span> : <span className="ok">no</span>]]} />
       </Section>
+      {run.regions.length > 0 && (
+        <Section title="Regions (nested trace blocks)">
+          {run.regions.map((g) => (
+            <button key={g.id} className="binding" onClick={() => g.call_id != null && onOpenCall(g.call_id)} disabled={g.call_id == null}>
+              <span className="v">{g.name}</span>
+              <span className="k">seq {g.seq_start}–{g.seq_end}</span>
+            </button>
+          ))}
+        </Section>
+      )}
       {error && (
         <Section title="Failure" className="box warn">
           <div className="mono raised">{error.exception.type}: {error.exception.message}</div>

@@ -46,6 +46,8 @@ CREATE TABLE exception (
 );
 CREATE TABLE gap (id INTEGER PRIMARY KEY, call_id INTEGER REFERENCES call(id), seq INTEGER NOT NULL,
   kind TEXT NOT NULL, detail TEXT);
+CREATE TABLE region (id INTEGER PRIMARY KEY, name TEXT NOT NULL, call_id INTEGER REFERENCES call(id),
+  seq_start INTEGER NOT NULL, seq_end INTEGER);
 """
 # Built on close: maintaining them during capture slows inserts. ponytail: a killed run's file has no indexes.
 INDEXES = """
@@ -65,6 +67,7 @@ COLUMNS = {
     "exception": ("id", "type", "message", "raised_call_id", "raised_line", "handled_call_id", "cause_id",
                   "traceback", "value_id"),
     "gap": ("id", "call_id", "seq", "kind", "detail"),
+    "region": ("id", "name", "call_id", "seq_start", "seq_end"),
 }
 _INSERT = {t: f"INSERT INTO {t} ({', '.join(c)}) VALUES ({', '.join('?' * len(c))})" for t, c in COLUMNS.items()}
 _CLOSE = ("UPDATE call SET seq_end = ?, end_ns = ?, outcome = ?, exception_id = ?, end_exact = ?, children = ? "
@@ -101,7 +104,8 @@ class Writer:
             leftover.unlink(missing_ok=True)
         # traces hold program data: owner-only (SQLite gives its -wal/-shm files the same mode)
         os.close(os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
-        self._ids = {t: itertools.count(1).__next__ for t in ("file", "code", "call", "value", "exception", "gap")}
+        self._ids = {t: itertools.count(1).__next__ for t in ("file", "code", "call", "value", "exception", "gap",
+                                                                   "region")}
         self._rows: dict[str, list] = {t: [] for t in COLUMNS}
         self._closes: list[tuple] = []
         self.pending = 0
@@ -320,6 +324,12 @@ class Reader:
 
     def gaps(self) -> list[dict]:
         return self._all("SELECT * FROM gap ORDER BY seq")
+
+    def regions(self) -> list[dict]:
+        """Nested trace() blocks inside this run (format 1.1; a 1.0 file has none)."""
+        if not self._one("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = 'region'"):
+            return []
+        return self._all("SELECT * FROM region ORDER BY seq_start")
 
     def source(self, file_id: int) -> str | None:
         row = self._one("SELECT source FROM file WHERE id = ?", (file_id,))

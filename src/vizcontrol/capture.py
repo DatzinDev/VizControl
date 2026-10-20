@@ -189,6 +189,16 @@ class Tracer:
         self._gap(None, "tracer_error", f"{type(error).__name__}: {error}")
         print(f"vizcontrol: internal error, tracing stopped ({type(error).__name__}: {error})", file=sys.stderr)
 
+    def mark(self, name: str) -> list:
+        """A nested trace() starts: where (the innermost traced call of this thread) and when. Written at unmark.
+        ponytail: a region still open when the process dies is not recorded."""
+        stack = self._stacks.get(_get_ident()) or []
+        call_id = next((r.id for r in reversed(stack) if r.id is not None), None)
+        return [self.w.new_id("region"), name, call_id, self._seq()]
+
+    def unmark(self, region: list) -> None:
+        self.w.add("region", (*region, self._seq()))
+
     def _gap(self, call_id, kind: str, detail: str | None = None) -> None:
         if kind not in self.truncated:
             self.truncated.append(kind)

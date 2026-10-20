@@ -126,13 +126,16 @@ class trace:
         self.name, self.output, self.config, self.options = name, output, config, options
         self.run: Run | None = None
         self.path: Path | None = None
+        self.region: list | None = None
 
     def __enter__(self) -> trace:
-        if _active is not None:  # ponytail: nested trace() joins the active run; region markers come later
+        target = self.name or sys._getframe(1).f_code.co_qualname
+        if _active is not None:  # nested: joins the active run as a marked region
             self.path = _active.path
+            self.parent = _active
+            self.region = _active.tracer.mark(target)
             return self
         config = self.config or load_config(**self.options)
-        target = self.name or sys._getframe(1).f_code.co_qualname
         self.run = Run("api", target, sys.argv, config, self.output)
         self.path = self.run.path
         self.run.start()
@@ -141,6 +144,8 @@ class trace:
     def __exit__(self, exc_type, exc, tb) -> bool:
         if self.run is not None:
             self.run.finish(_outcome(exc))
+        elif self.region is not None and not self.parent.done:
+            self.parent.tracer.unmark(self.region)
         return False
 
 
