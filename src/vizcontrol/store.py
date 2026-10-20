@@ -230,10 +230,15 @@ class Reader:
         return rows
 
     def all_calls(self) -> list[tuple]:
-        """(id, parent_id, start_ns, end_ns, outcome, seq_start, module, observed, kind) per call, in seq order."""
+        """(id, parent_id, start_ns, end_ns, outcome, seq_start, module, observed, kind, code_id) per call, in seq
+        order."""
         return self.db.execute(
             "SELECT call.id, call.parent_id, call.start_ns, call.end_ns, call.outcome, call.seq_start, code.module, "
-            "code.observed, code.kind FROM call JOIN code ON code.id = call.code_id ORDER BY call.seq_start").fetchall()
+            "code.observed, code.kind, call.code_id FROM call JOIN code ON code.id = call.code_id "
+            "ORDER BY call.seq_start").fetchall()
+
+    def codes(self) -> list[dict]:
+        return self._all("SELECT code.*, file.relpath, file.path FROM code LEFT JOIN file ON file.id = code.file_id")
 
     def object_bindings(self, object_id: int) -> list[dict]:
         """Bindings whose value holds the object, at the top level or nested: its oid in the compact JSON is always

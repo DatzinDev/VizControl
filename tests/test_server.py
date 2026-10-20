@@ -63,6 +63,10 @@ def test_navigation_endpoints(base):
     assert [c["qualname"] for c in path] == ["<module>", "post_order"]
     _, src = api(base, f"/api/runs/basic.vizc/source/{call['file_id']}")
     assert "def post_order" in src["source"]
+    _, stage = api(base, "/api/runs/basic.vizc/stage?name=app.services")
+    assert any(f["qualname"] == "OrderService.place_order" for f in stage["functions"])
+    status, _ = api(base, "/api/runs/basic.vizc/stage?name=nope")
+    assert status == 404
     _, hits = api(base, "/api/runs/basic.vizc/search?q=place_order")
     assert hits and hits[0]["kind"] == "function"
 

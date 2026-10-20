@@ -22,6 +22,21 @@ def test_stages_and_main_path(runs):
     assert edges[("app.services", "app.repo")] >= 1 and ("app.repo", "json") in edges
 
 
+def test_stage_detail_opens_a_stage_into_functions(runs):
+    d = A.stage_detail(runs["basic"], "app.services")
+    funcs = {f["qualname"]: f for f in d["functions"]}
+    assert funcs["OrderService.place_order"]["cls"] == "OrderService" and funcs["iter_valid"]["cls"] is None
+    assert funcs["OrderService"]["kind"] == "class" and funcs["OrderService"]["cls"] == "OrderService"
+    by_code = {f["code_id"]: f["qualname"] for f in d["functions"]}
+    inside = {(by_code[e["from"]], by_code[e["to"]]) for e in d["edges"]}
+    assert ("OrderService.place_order", "OrderService._build_order") in inside
+    entered = {(i["stage"], i["from_qualname"], by_code[i["to"]]) for i in d["incoming"]}
+    assert ("app.api", "post_order", "OrderService.place_order") in entered
+    assert {o["stage"] for o in d["outgoing"]} >= {"app.repo", "app.pricing", "app.models"}
+    assert d["stats"]["functions"] == len(funcs) and d["stats"]["self_ns"] <= d["stats"]["total_ns"]
+    assert A.stage_detail(runs["basic"], "nope") is None
+
+
 def test_stage_rules_override_module_paths():
     stage_of = A.stage_namer({"stages": {"Domain": ["app.models", "app.pricing.*"]}, "stage_depth": 1})
     assert stage_of("app.models", True) == "Domain"
