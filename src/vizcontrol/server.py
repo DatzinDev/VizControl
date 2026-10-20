@@ -39,15 +39,20 @@ class Runs:
         self._cache: dict[tuple, object] = {}
         self.lock = threading.Lock()  # ponytail: one request at a time touches SQLite; fine for a local single user
 
-    def ids(self) -> list[str]:
+    def registry(self) -> dict[str, Path]:
+        """Run id -> file, discovered on disk. Paths only ever come from here, never from request input."""
         if self.root.is_file():
-            return [self.root.name]
-        return sorted(str(p.relative_to(self.root)) for p in self.root.rglob("*.vizc"))
+            return {self.root.name: self.root}
+        return {str(p.relative_to(self.root)): p for p in sorted(self.root.rglob("*.vizc")) if p.is_file()}
+
+    def ids(self) -> list[str]:
+        return list(self.registry())
 
     def path(self, run_id: str) -> Path:
-        if run_id not in self.ids():
+        path = self.registry().get(run_id)
+        if path is None:
             raise NotFound(f"no run {run_id!r}")
-        return self.root if self.root.is_file() else self.root / run_id
+        return path
 
     def reader(self, run_id: str) -> Reader:
         path = self.path(run_id)
