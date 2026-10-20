@@ -229,6 +229,19 @@ export interface ObjectFlow {
   appearances: Appearance[];
   links: { from: number; to: number; seq: number; inferred: boolean }[];
   changes: Change[];
+  became: Hop[];
+  made_from: Hop[];
+}
+
+/** The next piece of data, in a call that took or returned the followed object (inferred). */
+export interface Hop {
+  call_id: number;
+  qualname: string;
+  name: string | null;
+  object_id: number | null;
+  type: string;
+  preview: string;
+  inferred: boolean;
 }
 
 export interface ObjectSummary {
