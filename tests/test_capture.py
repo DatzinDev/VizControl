@@ -88,6 +88,15 @@ def test_code_without_a_module_is_named_after_its_path(tmp_path):
     assert {c["module"] for c in Reader(tmp_path / "r.vizc").codes() if c["qualname"] == "root"} == {"templates.page"}
 
 
+def test_the_same_function_in_two_files_is_two_functions(tmp_path):
+    for name in ("one", "two"):  # equal code objects: they compare and hash alike
+        (tmp_path / f"{name}.py").write_text("def f(x):\n    return x\n")
+    (tmp_path / "main.py").write_text("import one, two\none.f(1)\ntwo.f(2)\n")
+    subprocess.run([sys.executable, "-m", "vizcontrol", "run", "-o", "m.vizc", "main.py"], cwd=tmp_path, timeout=60)
+    r = Reader(tmp_path / "m.vizc")
+    assert sorted(c["module"] for c in r.codes() if c["qualname"] == "f") == ["one", "two"]
+
+
 def test_script_failure(tmp_path):
     proc, r = run_cli(tmp_path, "checkout.py", "vip")
     assert proc.returncode == 1
