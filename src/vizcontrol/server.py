@@ -141,6 +141,8 @@ def api(runs: Runs, path: str, q: dict):
         return runs.cached(run_id, A.error_path)
     if rest == "/search":
         return A.search(r, q.get("q", [""])[0])
+    if rest == "/objects":
+        return r.objects(_int(q, "limit", 50, 1, 500))
     m = re.fullmatch(r"/(calls|values|objects|source)/(\d+)(/bindings|/path)?", rest)
     if not m:
         raise NotFound(path)
