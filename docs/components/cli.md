@@ -29,6 +29,8 @@ vizcontrol serve [PATH]     # file or directory, default .vizcontrol/runs
 vizcontrol ls [DIR]         # table of runs: time, target, outcome, duration, calls
 vizcontrol info FILE        # run metadata, config, truncation, counts per table
 vizcontrol diagram FILE [--stage NAME]   # Level 1 (or one stage, Level 2) as a Mermaid flowchart on stdout
+vizcontrol diff A.vizc B.vizc             # first divergence (path, calls on each side, argument diff, branch) and
+                                          # the calls that returned something else; exit 0 same, 1 differ, 2 error
 ```
 
 Everything after the script path (or `-m module`) belongs to the target program, the same as with `python`.
