@@ -80,6 +80,29 @@ await check("search finds a function and reveals it", async () => {
   expect((await text(".inspector .title-lg")) === "load_vip_rules", "search did not open the call");
 });
 
+await check("Data Flow follows an object, nested appearances included", async () => {
+  await page.goto(`${base}#run=basic.vizc`, { waitUntil: "networkidle0" });
+  await page.reload({ waitUntil: "networkidle0" });
+  await wait(800);
+  await page.$$eval(".tabs button", (bs) => bs.find((b) => b.textContent === "Data Flow").click());
+  await wait(600);
+  await page.$$eval(".picker .binding", (bs) => bs.find((b) => b.textContent.includes("order")).click());
+  await wait(1000);
+  expect((await text(".level")) === "Data Flow", `level is ${await text(".level")}`);
+  expect((await page.$$(".step")).length >= 5, "fewer than 5 steps for the order");
+  expect((await text(".inspector")).includes("'draft' → 'paid'"), "status change missing");
+  await page.$$eval(".inspector .binding", (bs) => bs.find((b) => b.textContent.includes("customer")).click());
+  await wait(1000);
+  const heads = await page.$$eval(".step .head", (hs) => hs.map((h) => h.textContent));
+  expect(heads.some((h) => h.includes("in order.customer")), `no nested step: ${heads.join(" | ")}`);
+});
+
+await check("clicking a step opens its call", async () => {
+  await page.$$eval(".react-flow__node-step", (ns) => ns.find((n) => n.textContent.includes("compute")).click());
+  await wait(1200);
+  expect((await text(".inspector .title-lg")) === "compute", `inspector shows ${await text(".inspector .title-lg")}`);
+});
+
 await check("no uncaught page errors", async () => expect(!errors.length, errors.join("; ")));
 await browser.close();
 process.exit(failures ? 1 : 0);
