@@ -39,7 +39,13 @@ vizcontrol = "vizcontrol.cli:main"
 vizcontrol = "vizcontrol.pytest_plugin"
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff==0.17.1"]
+dev = [
+    "numpy>=2.5.4",
+    "pandas>=3.0.6",
+    "pydantic>=2.14.1",
+    "pytest>=8",
+    "ruff==0.17.1",
+]
 
 [tool.ruff]
 line-length = 120
