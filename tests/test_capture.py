@@ -140,6 +140,7 @@ def test_trace_block_exceptions_and_limits(tmp_path):
         recurse(30)
     r = Reader(t.path)
     assert r.run()["kind"] == "api" and r.run()["outcome"] == "ok"
+    assert not [c for c in tree(r) if "trace" in c["qualname"]]  # vizcontrol's own machinery never shows
 
     excs = {e["type"]: e for e in r.exceptions()}
     assert set(excs) == {"KeyError", "RuntimeError"}  # with-block re-raise is not a second exception

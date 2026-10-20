@@ -257,7 +257,9 @@ class Tracer:
             cid = self._codes.get(code, _MISSING)
             if cid is _MISSING:
                 cid = self._code_id(code, c.__module__)
-            return None if cid is not None else ((c.__module__, c.__qualname__), ())
+            if cid is not None or code.co_filename.startswith(_PKG_DIR):  # traced itself, or our own machinery
+                return None
+            return (c.__module__, c.__qualname__), ()
         if t is BuiltinFunctionType or t in _C_DESCRIPTORS:
             return None
         if isinstance(c, type):
