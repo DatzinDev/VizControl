@@ -350,9 +350,10 @@ class Reader:
             "ORDER BY binding.seq", (kind, *call_ids))
 
     def call_events(self) -> list[tuple]:
-        """(id, seq_start, seq_end, outcome, code kind) of every call: what a timeline is made of."""
-        return self.db.execute("SELECT call.id, seq_start, seq_end, outcome, code.kind FROM call "
-                               "JOIN code ON code.id = call.code_id").fetchall()
+        """(id, parent_id, seq_start, seq_end, outcome, code kind, code_id) of every call in start order: what a
+        replay is made of."""
+        return self.db.execute("SELECT call.id, call.parent_id, seq_start, seq_end, outcome, code.kind, call.code_id "
+                               "FROM call JOIN code ON code.id = call.code_id ORDER BY seq_start").fetchall()
 
     def bindings_of(self, call_ids: list[int]) -> list[dict]:
         """Every binding of the given calls, with its value, in time order."""
@@ -371,18 +372,6 @@ class Reader:
             "value.data, code.qualname FROM binding JOIN value ON value.id = binding.value_id "
             "JOIN call ON call.id = binding.call_id JOIN code ON code.id = call.code_id "
             "WHERE binding.name = ? ORDER BY binding.seq LIMIT ?", (name, limit))
-
-    def code_graph(self) -> tuple[list[dict], list[dict]]:
-        """Functions that ran (calls, first seq, raised) and who called whom (calls, first seq)."""
-        nodes = self._all(
-            "SELECT code.id AS code_id, code.qualname, code.module, code.kind, code.observed, COUNT(*) AS calls, "
-            "MIN(call.seq_start) AS first_seq, SUM(call.outcome = 'raised') AS raised "
-            "FROM call JOIN code ON code.id = call.code_id GROUP BY code.id ORDER BY first_seq")
-        edges = self._all(
-            "SELECT p.code_id AS source, c.code_id AS target, COUNT(*) AS calls, MIN(c.seq_start) AS first_seq, "
-            "MIN(c.id) AS first_call "
-            "FROM call c JOIN call p ON p.id = c.parent_id GROUP BY 1, 2 ORDER BY first_seq")
-        return nodes, edges
 
     def first_binding_with(self, text: str) -> dict | None:
         """The earliest binding whose value holds `text` (a function's `"label":"..."`), with its call."""
