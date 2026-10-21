@@ -784,23 +784,48 @@ def search(reader: Reader, text: str, limit: int = 100) -> list[dict]:
 
 # -- replay: the run as a recording ------------------------------------------------------------------------------
 
+def setup_calls(reader: Reader, events: list[tuple]) -> set[int]:
+    """The calls that set the program up rather than run it: an import (a module body run by an import, not the
+    run's entry), a class body, everything they call, and a root module body that only imported (a package's
+    `__init__` before `python -m` runs its `__main__`). A replay leaves them out, so it starts where the program does.
+    None are left out when the run failed inside one (that is the story then), or when nothing would be left.
+    `events` are `Reader.call_events()` rows."""
+    setup: set[int] = set()
+    children: dict[int, list[int]] = defaultdict(list)
+    for cid, parent, _, _, _, kind, _ in events:  # parents start before their children
+        if parent in setup or (kind in ("module", "class") and parent is not None):
+            setup.add(cid)
+        if parent is not None:
+            children[parent].append(cid)
+    for cid, parent, _, _, _, kind, _ in events:
+        if parent is None and kind == "module" and all(k in setup for k in children[cid]):
+            setup.add(cid)
+    if len(setup) == len(events):
+        return set()
+    if reader.run()["outcome"] != "ok" and any(
+            e["handled_call_id"] is None and e["raised_call_id"] in setup for e in reader.exceptions()):
+        return set()
+    return setup
+
+
 class Timeline:
-    """Every call's start and end in time order: the steps of a replay. Built once per run and paged.
-    ponytail: three ints per step in memory; a run of millions of calls costs ~100 MB here, page from SQL if needed."""
+    """Every call's start and end in time order, setup left out (`setup_calls`): the steps of a replay. Built once
+    per run and paged. ponytail: three ints per step in memory; a run of millions of calls costs ~100 MB here, page
+    from SQL if needed."""
 
     def __init__(self, reader: Reader):
-        steps, setup = [], set()
-        for cid, start, end, outcome, kind in reader.call_events():
+        events = reader.call_events()
+        setup = setup_calls(reader, events)
+        steps = []
+        for cid, _, start, end, outcome, _, _ in events:
+            if cid in setup:
+                continue
             steps.append((start, 0, cid))
             if end is not None:  # an unfinished call never ends
                 steps.append((end, 2 if outcome == "raised" else 1, cid))
-            if kind in ("module", "class"):
-                setup.add(cid)
         steps.sort()
         self.steps = steps
         self.raises = [i for i, s in enumerate(steps) if s[1] == 2]
-        # where the program starts doing its work: the first call that is not an import or a class body
-        self.start = next((i for i, (_, kind, cid) in enumerate(steps) if kind == 0 and cid not in setup), 0)
 
     def index_at(self, seq: int) -> int:
         """The first step at or after `seq`."""
@@ -833,20 +858,39 @@ class Timeline:
                                              "origin": exc["raised_call_id"] == cid, "line": exc["raised_line"]}
                 step["values"] = raised.get(cid, [])
             out.append(step)
-        return {"total": len(self.steps), "offset": offset, "steps": out, "raises": self.raises, "start": self.start}
+        return {"total": len(self.steps), "offset": offset, "steps": out, "raises": self.raises}
 
 
 def call_graph(reader: Reader) -> dict:
     """Functions as nodes, "A called B" as edges, each with when it first happened (seq): a replay reveals them in
-    that order."""
-    nodes, edges = reader.code_graph()
-    for n in nodes:
-        n["observed"] = bool(n["observed"])
-    called_back = callbacks(reader, reader.calls([e["first_call"] for e in edges]))  # an edge is as its first call
-    for e in edges:
+    that order. Setup (`setup_calls`) is left out, as in the replay."""
+    events = reader.call_events()
+    setup = setup_calls(reader, events)
+    code_of = {cid: code for cid, _, _, _, _, _, code in events}
+    codes = {c["id"]: c for c in reader.codes()}
+    nodes: dict[int, dict] = {}
+    edges: dict[tuple, dict] = {}
+    for cid, parent, start, _, outcome, _, code in events:
+        if cid in setup:
+            continue
+        n = nodes.get(code)
+        if n is None:
+            c = codes[code]
+            n = nodes[code] = {"code_id": code, "qualname": c["qualname"], "module": c["module"], "kind": c["kind"],
+                               "observed": bool(c["observed"]), "calls": 0, "first_seq": start, "raised": 0}
+        n["calls"] += 1
+        n["raised"] += outcome == "raised"
+        if parent is not None and parent not in setup and parent in code_of:
+            key = (code_of[parent], code)
+            e = edges.get(key)
+            if e is None:
+                e = edges[key] = {"source": key[0], "target": code, "calls": 0, "first_seq": start, "first_call": cid}
+            e["calls"] += 1
+    called_back = callbacks(reader, reader.calls([e["first_call"] for e in edges.values()]))  # as its first call
+    for e in edges.values():
         cb = called_back.get(e.pop("first_call"))
         e["callback"] = cb and {k: cb[k] for k in ("by", "via", "line") if k in cb}
-    return {"nodes": nodes, "edges": edges}
+    return {"nodes": list(nodes.values()), "edges": list(edges.values())}
 
 
 def watch(reader: Reader, name: str, limit: int = 5000) -> list[dict]:

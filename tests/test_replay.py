@@ -38,7 +38,7 @@ def test_a_run_replays_as_calls_and_returns_in_time_order(tmp_path):
     boom = page["steps"][6]
     assert boom["exception"] == {"type": "ValueError", "message": "too big: 3", "origin": True, "line": 13}
     assert ("x", "3") in [(v["name"], v["preview"]) for v in boom["values"]]  # the locals where it was raised
-    assert page["raises"] == [6] and page["total"] == 8 and page["start"] == 0  # no imports before work()
+    assert page["raises"] == [6] and page["total"] == 8
     later = api(runs, "/api/runs/r.vizc/timeline", {"seq": [str(boom["seq"])], "limit": ["2"]})
     assert later["offset"] == 6 and [s["kind"] for s in later["steps"]] == ["raise", "return"]
     assert api(runs, "/api/runs/r.vizc/timeline", {"end_of": [str(boom["call_id"])]})["offset"] == 6
@@ -124,14 +124,34 @@ def test_callbacks_say_how_they_were_called_and_where_the_function_came_from(tmp
     assert edges[("run_steps", "double")]["via"] == "steps[0]" and edges[("wiring", "run_steps")] is None
 
 
-def test_a_replay_starts_where_the_program_starts_working(tmp_path):
+def replay(tmp_path, *args):
     import subprocess
     import sys
 
+    subprocess.run([sys.executable, "-m", "vizcontrol", "run", "-o", "r.vizc", *args], cwd=tmp_path, timeout=60,
+                   capture_output=True)
+    r = Reader(tmp_path / "r.vizc")
+    return r, [(s["kind"], s["qualname"]) for s in A.Timeline(r).page(r, 0, 100)["steps"]]
+
+
+def test_a_replay_leaves_the_setup_out_and_starts_where_the_program_does(tmp_path):
     (tmp_path / "helpers.py").write_text("class Box:\n    pass\n\n\ndef work():\n    return Box()\n")
     (tmp_path / "main.py").write_text("import helpers\n\nhelpers.work()\n")
-    subprocess.run([sys.executable, "-m", "vizcontrol", "run", "-o", "m.vizc", "main.py"], cwd=tmp_path, timeout=60)
-    r = Reader(tmp_path / "m.vizc")
-    page = A.Timeline(r).page(r, 0, 50)
-    first = page["steps"][page["start"]]
-    assert page["start"] > 0 and (first["kind"], first["qualname"]) == ("call", "work")  # after the imports
+    r, steps = replay(tmp_path, "main.py")
+    assert steps == [("call", "<module>"), ("call", "work"), ("call", "Box"), ("return", "Box"), ("return", "work"),
+                     ("return", "<module>")]  # Box() is the instance it makes, not the class body
+    assert {n["qualname"] for n in A.call_graph(r)["nodes"]} == {"<module>", "work", "Box"}  # no import
+    pkg = tmp_path / "app"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("")
+    (pkg / "__main__.py").write_text("import helpers\n\n\ndef main():\n    return helpers.work()\n\n\nmain()\n")
+    r, steps = replay(tmp_path, "-m", "app")
+    assert steps[:2] == [("call", "<module>"), ("call", "main")]  # the package's __init__ only imported
+    assert r.calls([steps and A.Timeline(r).steps[0][2]])[0]["module"] == "app.__main__"
+
+
+def test_a_run_that_failed_while_importing_keeps_the_imports(tmp_path):
+    (tmp_path / "broken.py").write_text("def setup():\n    raise RuntimeError('no config')\n\n\nsetup()\n")
+    (tmp_path / "main.py").write_text("import broken\n")
+    r, steps = replay(tmp_path, "main.py")
+    assert ("raise", "setup") in steps and ("call", "<module>") in steps[1:]  # the import is where it failed
