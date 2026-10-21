@@ -1,25 +1,18 @@
 # UI design
 
-Visual concept for the [viewer](components/viewer.md). The editable source is the Penpot file **VizControl**:
-
-| Page | Contents |
-|---|---|
-| `Screens` | Boards `S1`…`S7` (1440×900), one per screen below. All screens use one sample project (an order checkout) and two runs, `test_checkout[basic]` (ok) and `test_checkout[vip]` (raised). |
-| `Foundations` | Color swatches (dark and light), typography, provenance and status styles, spacing. |
-| `Components` | `CallNode` (variant property `State`: ok, raised, unfinished, opaque, truncated, selected), `GroupNode`, `StageNode/*`, `FlowTag`, `LevelBadge`, `DivergenceMarker`, `Inspector/Section`, `Inspector/Callout`. |
-
-The colors also exist in the file's library and as Penpot design tokens: sets `vizcontrol/dark` and
-`vizcontrol/light`, themes `mode/dark` and `mode/light`.
+The [viewer](components/viewer.md) is one screen, Replay: a run played back like a debugger after the fact. This
+page is its visual design. The colors and type come from the Penpot file **VizControl** (page `Foundations`, design
+token sets `vizcontrol/dark` and `vizcontrol/light`).
 
 ## Principles
 
-- **Graph first, details on demand.** The canvas always shows structure. Numbers and values live in the
-  inspector.
-- **Never lose your place.** A breadcrumb shows the current level (Run › Stage › Module › Function › Value). Each
-  level transition is a zoom, not a page change.
-- **Evidence is visible.** Observed is solid, inferred is dashed, not captured is hatched. Status is shown by shape
-  and icon as well as color.
-- **Failure is the landing page** when a run failed.
+- **Show the run happening.** What explains code is watching who calls whom, when and with what, not a structure
+  diagram. Every element follows the current step.
+- **Never lose your place.** The current call is lit on the graph, centered in the transcript and on top of the
+  call stack; the URL keeps the run and the step.
+- **Evidence is visible.** Library code (not observed inside) is dashed; inferred facts (callbacks) say so. Status
+  is shown by symbol and shape as well as color.
+- **Failure is the landing page** when a run failed: it opens on the step that raised.
 
 ## Foundations
 
@@ -43,42 +36,40 @@ Dark-first with a light theme. These tokens are the same names used by the front
 Type: **Inter** for UI (12/14/16/20), **JetBrains Mono** for code, values and locations (12/13). Spacing scale:
 4, 8, 12, 16, 24, 32. Radius: 6 for nodes, 8 for panels.
 
-## Shell (all screens, 1440×900)
+## Layout (1440×900)
 
 ```
-┌ TopBar: logo · run picker ▾ · [Execution Flow | Data Flow | Diff] · search ⌘K ─────────────┐
-├ Breadcrumbs: Run › Stage › Module › Function › Value ────────────────────────────────────────┤
-│ LeftPanel 260 │                 Canvas (graph)                         │ Inspector 360        │
-│ runs          │                                                        │                      │
-│ filters       │                                                        │                      │
-├───────────────┴────────────────────────────────────────────────────────┴──────────────────────┤
-└ Timeline 72: calls over seq, error marker, selection highlight ─────────────────────────────────┘
+┌ TopBar 48: logo · run (outcome · duration) ───────────────────────────────────────────────────────────┐
+│ Runs 260  │ Call graph: one box per module, functions inside        [Reset layout] │ Panel 380          │
+│ ● etl     │   ┌ etl.pipeline ────┐      ┌ etl.transforms.clean ┐                    │ STEP 61            │
+│ ⚠ etl bad │   │ Pipeline.run ━━━━┿━━━━▶ │ clean_rows ━━▶ clean_row│                  │ ↩ clean_row(row=…) │
+│           │   └──────────────────┘      └──────────────────────┘                    │ Callback · inferred│
+│           ├──────────────────────────────────────────────────────────────────────────┤ values (click: tree)│
+│           │ Transcript 230: one line per step, indented by depth, current centered   │ WATCH: name → value │
+│           ├──────────────────────────────────────────────────────────────────────────┤ CALL STACK          │
+│           │ ⏮ ◀ ▶ ▶| ⏭ ─────●──────────── raise marks ───── 61 / 80  speed          │                    │
+└───────────┴──────────────────────────────────────────────────────────────────────────┴────────────────────┘
 ```
 
-## Screens
+## Elements
 
-| Screen | Level / view | What it shows | Answers (vision §2) |
-|---|---|---|---|
-| **S1 Overview** | L1, Execution Flow | Main path of stages `tests → app.api → app.services → app.repo → sqlalchemy`, with call counts on edges and the main path in accent. The opaque stage (`sqlalchemy`) is dashed and grey. Secondary stages (`app.validation`, `app.pricing`) hang below the stage that calls them. Inspector: run summary, slowest stages, and a provenance note saying stages are inferred. | Where did it start? What are the main stages? |
-| **S2 Component expanded** | L2 | Stage `app.services` opened into module › class › function compound nodes (`orders.py › OrderService`, `cart.py › CartService`, `notify.py`) with call edges. Neighbouring stages stay collapsed around it. Inspector: stage stats, entry point, outgoing calls, files. | Which functions ran, from which files and modules? |
-| **S3 Function inspector** | L3 | Call subtree of `OrderService.place_order`: aggregated group `validate_item ×12`, opaque `Session.commit`, and a "+11 more" paging node. Inspector: `app/services/orders.py:42`, caller, args with object ids, return, children, source excerpt. | What did each function receive and return? |
-| **S4 Value inspector** | L4 | Canvas tags the calls where `order #40` appears. Inspector: value tree (with a redacted field), history of 5 appearances, diff between seq 318 and 1,021 (`status 'draft' → 'paid'`, `total`, `id`), and attribution marked inferred. | How did objects change? |
-| **S5 Failure view** | L3, failure mode | Run `test_checkout[vip]` opens on the failure. The error path is red from the test down to `apply_discount`, and off-path calls are dimmed. A dashed data-flow link shows `rule #77` coming from `load_rules`. Inspector: `ValueError`, origin `discounts.py:88`, locals at raise, last change before raise (`rule.pct 20 → 120`), propagation, traceback with a not-observed frame. The timeline marks the raise. | Where did it fail and what led there? |
-| **S6 Data Flow** | Data Flow | `order #40` followed across lanes (one per module) along time: `_build_order → Cart.total → _persist → send_receipt → place_order`, with Δ markers on changed fields. Inspector: lifecycle, changes, other objects, provenance. | How did data move between components? |
-| **S7 Run comparison** | Diff | Run A `[basic]` vs run B `[vip]`, with call signatures aligned row by row. The first divergence is marked under `compute`: A calls `apply_percentage` (line 56), B calls `load_vip_rules` (line 54) and then the failing `apply_discount`. Inspector: summary counts, divergence, argument diff (`customer.tier 'basic' → 'vip'`), branch source. | Why did two runs take different paths? |
+- **Function node** (180×46, mono): name and `×N` calls. States: *not yet run* (faint), *already run*, *on the call
+  stack* (accent border), *current* (accent fill and halo), *raised* (red fill and halo), *library* (dashed,
+  muted). Dragging moves it within its module's box; selected nodes get a `color.flow` outline.
+- **Module box**: the module's name at the top-left, its functions inside; dashed for a library. Dragging it carries
+  its functions.
+- **Edges** (bezier, arrowheads): *seen* `color.text-muted`, *not yet run* faint, *the path to the current call*
+  thick `color.accent` with a glow and on top (red when the step raised), *callback* dashed `color.flow` labelled
+  `via …` or `callback`. Labels carry `×N` calls; the path has none.
+- **Transcript line** (mono 12): `→ call(args)`, `↩` for a callback with a `color.flow` tag, `← returned value` in
+  `color.status.ok`, `✗ raised Type: message` in `color.status.raised`; later steps faded, the current one
+  highlighted.
+- **Scrubber**: the play button in accent, red tick marks where calls raised, the step counter in mono.
+- **Panel**: the step line, file and line, a dashed `color.flow` callback box, value rows (name, preview, 👁 to
+  watch), watch cards (amber border and "Δ now" when the value changed at this step), call stack rows.
 
-## Components
+## History
 
-- **Call node**: name (mono), module (muted), duration badge, child count "+N". Variants:
-  `ok`, `raised`, `unfinished`, `opaque`, `truncated` × `collapsed` / `expanded` / `selected`.
-- **Group node** `×N`: stacked-card look, outcome summary (e.g. `11 ok · 1 raised`).
-- **Stage node**: larger card with calls, time and a status strip.
-- **Edges**: call (solid), inferred (dashed), data flow (`color.flow`), error propagation (`color.status.raised`,
-  thicker).
-- **Inspector section**: collapsible header + key/value rows (mono values, truncated with "…" and expand).
-- **Value row**: name, type chip, preview, oid chip linking to Data Flow.
-
-## Traceability
-
-The success-criterion mapping in [requirements](01-requirements.md#traceability-to-the-success-criterion)
-references screens S1–S6. S7 covers FR-VIZ-11 (Later).
+The first concept (Penpot page `Screens`, boards S1–S7) had a zoomable overview of stages, a component view, a call
+tree, a value inspector, a failure view, a Data Flow view and a run comparison. It was built in 0.1–0.3 and replaced
+by Replay in 0.4, keeping the tokens and the value inspector.
