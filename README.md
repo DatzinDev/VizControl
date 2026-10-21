@@ -39,7 +39,8 @@ from vizcontrol.web import ASGIMiddleware
 app.add_middleware(ASGIMiddleware, every=1)   # or only requests with an X-VizControl header
 ```
 
-Requires Python 3.12+ (uses `sys.monitoring`). See [docs/](https://github.com/DatzinDev/VizControl/tree/main/docs) for requirements and architecture.
+Requires Python 3.12+ (uses `sys.monitoring`). See [docs/](https://github.com/DatzinDev/VizControl/tree/main/docs) for requirements and architecture,
+and the [releases](https://github.com/DatzinDev/VizControl/releases) for what changed in each version.
 
 ## Development
 
@@ -47,7 +48,7 @@ Requires Python 3.12+ (uses `sys.monitoring`). See [docs/](https://github.com/Da
 uv sync                                   # Python package (editable) + pytest
 uv run pytest
 cd frontend && npm ci && npm run build    # viewer -> src/vizcontrol/viewer/static
-cd frontend && npm run e2e               # drive the built viewer in headless Chrome
+cd frontend && npm run e2e               # replay the ETL example in headless Chrome
 uv run python benchmarks/overhead.py
 ```
 
