@@ -28,7 +28,7 @@ vizcontrol serve [PATH]     # file or directory, default .vizcontrol/runs
 
 vizcontrol ls [DIR]         # table of runs: time, target, outcome, duration, calls
 vizcontrol info FILE        # run metadata, config, truncation, counts per table
-vizcontrol diagram FILE [--stage NAME]   # Level 1 (or one stage, Level 2) as a Mermaid flowchart on stdout
+vizcontrol diagram FILE [--stage NAME]   # the stage graph (or one stage opened) as a Mermaid flowchart
 vizcontrol diff A.vizc B.vizc             # first divergence (path, calls on each side, argument diff, branch) and
                                           # the calls that returned something else; exit 0 same, 1 differ, 2 error
 ```
