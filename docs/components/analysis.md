@@ -174,8 +174,10 @@ scans the value table; an oid index written at capture is the upgrade if that ge
 ### Replay: timeline, call graph, watch
 
 `Timeline` is every call's start and its return or raise, in `seq` order, built once per run and paged; each step
-carries the values bound at it (arguments at a call, the result at a return, the locals where it raised). `start`
-is the first call that is not an import or a class body: where the program's work begins. `call_graph` is functions
+carries the values bound at it (arguments at a call, the result at a return, the locals where it raised). Setup is
+left out (`setup_calls`): a module body run by an import, a class body, everything they call, and a root module
+body that only imported (a package's `__init__` before `python -m` runs its `__main__`), so step 1 is the program's
+entry. Nothing is left out when the run failed inside an import. `call_graph` is functions
 as nodes and "A called B" as edges, with the `seq` each first happened. `watch` is every value a variable name had,
 in time order.
 

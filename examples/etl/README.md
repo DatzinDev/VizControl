@@ -26,9 +26,9 @@ vizcontrol run --serve -m etl data/orders_bad.csv    # fails: KeyError 'GBP'
 
 ## What to look at
 
-- **Who calls whom, and when.** The run opens where `main()` starts (the imports before it are still in the
-  transcript). Press play, or step with ← and →. Each module is a box on the graph; the call stack on the right says
-  how the program got to the current step.
+- **Who calls whom, and when.** The run opens on the program's entry, then `main()`; the imports are left out.
+  Press play, or step with ← and →. Each module is a box on the graph; the call stack on the right says how the
+  program got to the current step.
 - **Callbacks.** `Pipeline.run` never names `read_orders`, `clean_rows`, `to_usd` or `save`: it runs `step(data)`
   for each step it was given. Those calls show as `↩` in the transcript, with "via self.steps[1]", and the panel says
   where the function came from (passed to `Pipeline.__init__` by `main`). The same for the bus: `EventBus.emit`
