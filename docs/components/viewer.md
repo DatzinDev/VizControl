@@ -15,9 +15,9 @@ graph and the watches; the viewer lays them out and plays them.
   "A called B". As the recording plays it lights up: functions already run, the call stack, the current function,
   red where it raised. Imports and class bodies are left off the graph. Callback arrows (see below) are dashed and
   labelled with where the function was (`via self.steps[1]`). The path to the current call is drawn solid and thick
-  on top of the rest. Double-click a function to jump to its first call. Nodes and whole module boxes can be dragged
-  (Ctrl/⌘-click selects several, Shift-drag a box); where they were left is remembered per run in this browser, and
-  "Reset layout" puts them back. In a graph of more than 40 functions the camera follows the current one.
+  on top of the rest. Double-click a function to jump to its first call. A module's box can be dragged with its
+  functions, and a function within its box, never out of it (Ctrl/⌘-click selects several, Shift-drag a box); where
+  they were left is remembered per run in this browser, and "Reset layout" puts them back. In a graph of more than 40 functions the camera follows the current one.
 - **Transcript**: one line per step, indented by depth: `→ clean_rows(rows=…)`, `← clean_rows returned …`,
   `✗ RateTable.rate raised KeyError: GBP`, and `↩` for a callback with its tag.
 - **Scrubber**: play and pause (space), step (← →), jump (the bar, the red marks where a call raised), speed.
@@ -25,7 +25,8 @@ graph and the watches; the viewer lays them out and plays them.
   variables with their value at that step and "Δ now" when it changes there, and the call stack (click a frame to
   jump to where that call started). For a callback, how it was called: the caller's line, where the function was
   among the caller's arguments, and the first value it was seen in, as a jump.
-- **Opening**: a failed run opens on the step where it raised; another where its work begins, past the imports.
+- **Opening**: a failed run opens on the step where it raised; another on step 1, the program's entry (imports and
+  class bodies are not steps, see [analysis](analysis.md)).
 
 The overview, component, call-tree, Data Flow, Diff and Map views were removed from the viewer in 0.4: they showed
 structure, while what helps is seeing the run happen. Their analysis stays in the server and the CLI

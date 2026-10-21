@@ -23,7 +23,7 @@ together.
 vizcontrol serve        # or trace with: vizcontrol run --serve main.py
 ```
 
-A run opens as a recording, where its work begins. Press play, or step with ← and →:
+A run opens as a recording of what the program did, imports and class bodies left out. Press play, or step with ← and →:
 
 - the **call graph** lights up as the program goes, one box per module, so you see which layer calls which;
 - the **transcript** says who called whom with what, and what came back;
