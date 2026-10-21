@@ -4,13 +4,14 @@
 
 ## Responsibility
 
-Pure functions that turn stored, observed events into the structures the viewer navigates: call tree, stages,
-aggregated groups, data-flow links, value diffs, the error path and run differences. Analysis only reads through
+Pure functions that turn stored, observed events into what the viewer replays (the timeline, the call graph,
+inferred callbacks, watches, the error path, object histories) and what the CLI and the API serve (stages,
+aggregated call tree, run differences, search). Analysis only reads through
 the [storage Reader](storage.md). Everything it produces is **inferred** and labelled that way (NFR-OBS).
 
 ## Requirements covered
 
-FR-ANA-1..8, supports FR-VIZ-1..13.
+FR-ANA-1..8, FR-VIZ-12..17 (replay, call graph, transcript, watch, callbacks).
 
 ## Interface
 
@@ -24,6 +25,10 @@ def object_flow(reader, object_id: int) -> ObjectFlow                           
 def value_diff(a: dict, b: dict) -> list[Change]                                          # FR-ANA-6
 def compare(reader_a, reader_b) -> RunDiff  # GET /api/compare                          # FR-ANA-7
 def search(reader, query: str) -> list[Hit]                                               # FR-ANA-8
+class Timeline(reader)  # .page(reader, offset, limit), .index_at(seq): replay steps        # FR-VIZ-12
+def call_graph(reader) -> dict                                                            # FR-VIZ-14
+def callbacks(reader, calls) -> dict[int, dict]                                           # FR-VIZ-17
+def watch(reader, name: str) -> list[dict]                                                # FR-VIZ-16
 ```
 
 Results are plain JSON-able dicts. The server caches the expensive ones (`stages`, `stage_detail`, `error_path`) per run and
@@ -42,7 +47,7 @@ drops them when the file's mtime changes. Nothing is written back into `.vizc` f
   `{"type": "more", "remaining": N}` node.
 - Each node carries `children` (direct child count, from the trace) so the viewer can show "+N" without loading.
 
-### Stages, Level 1 (FR-ANA-2)
+### Stages (FR-ANA-2): `vizcontrol diagram` and `/api/.../stages`
 
 A stage is a set of modules, or the calls below a head function. `Stager` assigns them, first match wins:
 
@@ -51,11 +56,11 @@ A stage is a set of modules, or the calls below a head function. `Stager` assign
    A glob with a colon matches `module:qualname` and makes a head function: `Load = ["etl:load_*"]`.
 2. Default: the module path truncated to `stage_depth` components below the project root (default 2:
    `app.services.orders` → `app.services`). When that gives more than 12 stages (`MAX_STAGES`), a package of
-   many modules, the depth is 1: `black.linegen`, `black.nodes`, ... are one stage `black`, opened at Level 2.
+   many modules, the depth is 1: `black.linegen`, `black.nodes`, ... are one stage `black`, opened with `--stage black`.
    A configured `stage_depth` is used as is. `__main__` is named after the script (`checkout.py` → `checkout`)
    or the `-m` module. Opaque calls group under their top-level package (`sqlalchemy`, `requests`) and the stage
    is marked not observed inside. A standard library stage (`sys.stdlib_module_names`) is also marked `stdlib`:
-   the main path never goes into one, and the viewer and Mermaid leave them out unless they raised.
+   the main path never goes into one, and Mermaid leaves them out unless they raised.
 3. Flat projects: with no function rules and fewer than 3 observed module stages, a one-file script would be one
    stage. Then each module stage is split: from the codes entering it (root calls, or calls from another stage),
    a chain of lone callees (`main()` → `run()`) stays the stage, and the functions the chain first fans out to
@@ -78,12 +83,12 @@ directly would otherwise see it as its module's entry, while the test that goes 
 counts, first `seq`, modules, observed) and one edge per caller-stage → callee-stage pair (calls, time, first
 `seq`). The **main path** starts at the stage of the first root call and keeps following the outgoing edge that
 leads to the most calls (the subtree size of the calls crossing it; time only breaks ties) to a stage not yet on the
-path. Counts are deterministic, while timings are noise in small runs (a time-based rule flipped between CI runs). That is the `Request → Controller → Service → ... → Response`
-line of Level 1.
+path. Counts are deterministic, while timings are noise in small runs (a time-based rule flipped between CI runs).
+That is the `Request → Controller → Service → ... → Response` line of the diagram.
 
-`vizcontrol diagram` (and `GET /api/runs/{run}/mermaid`) writes Level 1, or one stage opened as Level 2, as a
-Mermaid flowchart (`vizcontrol.diagram`): the main path drawn thick, raised stages red, libraries dashed, and in
-Level 2 module › class subgraphs with neighbouring stages as single nodes.
+`vizcontrol diagram` (and `GET /api/runs/{run}/mermaid`) writes the stage graph, or one stage opened, as a
+Mermaid flowchart (`vizcontrol.diagram`): the main path drawn thick, raised stages red, libraries dashed; an
+opened stage is drawn as module › class subgraphs with neighbouring stages as single nodes.
 
 ### Route map (many runs)
 
@@ -92,9 +97,9 @@ run went through, each with the ids of the runs that did and the sums of their c
 stages and edges). Its main path starts at the most common entry stage. Served as `GET /api/map` over every
 readable run; with `pytest --vizcontrol` that is the map of the whole suite, one route per test.
 
-### One stage opened, Level 2 (FR-VIZ-2)
+### One stage opened (`vizcontrol diagram --stage`)
 
-`stage_detail` makes one pass over all calls, with the same stage names as Level 1:
+`stage_detail` makes one pass over all calls, with the same stage names as `stages`:
 
 - **Functions**: one node per code object of the stage, with its calls, total and self time, raised and unfinished
   counts and first call. `cls` comes from the qualname (`OrderService.place_order` → `OrderService`; module-level
@@ -121,8 +126,8 @@ For the exception that ended the run (or, for `assertion_failed`, the assertion)
   For example, `rule.pct 20 → 120` between `Rule.__init__` and `load_vip_rules`. This answers "what changed just
   before it broke".
 
-Exceptions that were raised and handled are listed separately. The viewer can show them, but they are not the
-failure.
+Exceptions that were raised and handled are listed separately. The replay shows them as raise steps, but they are
+not the failure.
 
 ### Data flow (FR-ANA-4/6)
 
