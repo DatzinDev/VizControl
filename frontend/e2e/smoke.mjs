@@ -34,9 +34,11 @@ const open = async (run) => {
 };
 const stepLabel = async () => Number((await text(".watch .label")).replace("Step ", ""));
 
-await check("a run opens in Replay where its work begins, past the imports", async () => {
+await check("a run opens on its first step, the imports left out", async () => {
   await open("ok.vizc");
-  expect((await text(".now-line")).includes("main("), `opens on: ${await text(".now-line")}`);
+  expect((await stepLabel()) === 1 && (await text(".now-line")).includes("etl.__main__"), `opens on: ${await text(".now-line")}`);
+  const lines = await page.$$eval(".transcript .line", (ls) => ls.map((l) => l.textContent));
+  expect(lines[1].includes("main(") && !lines.some((l) => l.includes("<module>")), `then: ${lines.slice(0, 3).join(" / ")}`);
   expect((await page.$$(".transcript .line")).length >= 5, "no transcript");
   expect((await page.$$(".react-flow__node-file")).length >= 5, "no box per module");
 });
@@ -91,16 +93,33 @@ await check("the path to the current call is painted, and nodes can be moved", a
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   });
   const a = await pos();
-  await page.mouse.move(a.x, a.y);
+  const box = await page.$$eval(".react-flow__node-file", (ns) => {  // a module's box carries its functions
+    const r = ns.find((n) => n.textContent.startsWith("etl.__main__")).getBoundingClientRect();
+    return { x: r.x + 20, y: r.y + 8 };
+  });
+  await page.mouse.move(box.x, box.y);
   await page.mouse.down();
-  await page.mouse.move(a.x + 30, a.y + 80, { steps: 6 });
+  await page.mouse.move(box.x + 30, box.y + 80, { steps: 6 });
   await page.mouse.up();
   await wait(400);
-  expect((await pos()).y - a.y > 40, "main did not move");
+  expect((await pos()).y - a.y > 40, "main did not move with its box");
   expect((await page.$$(".react-flow__edge")).length > 0, "moving a node lost the arrows");
   await page.click(".reset-layout");
   await wait(400);
   expect(Math.abs((await pos()).y - a.y) < 5, "Reset layout did not put it back");
+  const inBox = () => page.evaluate(() => {
+    const f = [...document.querySelectorAll(".react-flow__node-fn")].find((n) => n.textContent.startsWith("main")).getBoundingClientRect();
+    const b = [...document.querySelectorAll(".react-flow__node-file")].find((n) => n.textContent.startsWith("etl.__main__")).getBoundingClientRect();
+    return f.top >= b.top - 1 && f.bottom <= b.bottom + 1 && f.left >= b.left - 1 && f.right <= b.right + 1;
+  });
+  const b = await pos();
+  await page.mouse.move(b.x, b.y);
+  await page.mouse.down();
+  await page.mouse.move(b.x + 300, b.y + 300, { steps: 8 });
+  await page.mouse.up();
+  await wait(400);
+  expect(await inBox(), "a function left its module's box");
+  await page.click(".reset-layout");
 });
 
 await check("a failed run opens on the step where it raised", async () => {
