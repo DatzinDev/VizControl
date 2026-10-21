@@ -57,7 +57,8 @@ const clip = (s: string, n = 48) => (s.length > n ? `${s.slice(0, n - 1)}…` : 
 
 /** One line of the transcript: what happened at a step, as a debugger would say it. */
 function describe(s: Step): string {
-  const name = shortName(s.qualname);
+  const name = s.qualname === "<module>" ? `${s.module ?? "module"} (module body)` : shortName(s.qualname);
+  if (s.kind === "call" && s.qualname === "<module>") return `▶ ${name}`;  // the program's entry
   if (s.kind === "call") return `${s.callback ? "↩" : "→"} ${name}(${s.values.filter((v) => v.kind === "arg").map((v) => `${v.name}=${clip(v.preview, 32)}`).join(", ")})`;
   if (s.kind === "raise") return `✗ ${name} raised ${s.exception ? `${s.exception.type}: ${s.exception.message}` : ""}`;
   const ret = s.values.find((v) => v.kind === "return");
@@ -143,9 +144,7 @@ export function ReplayView(props: {
       if (!live) return;
       setTotal(p.total);
       setRaises(p.raises);
-      // no step asked for: open where the work begins, past the imports
-      const at = start.endOf == null && start.step == null ? p.start : p.offset;
-      setPos(Math.min(at, Math.max(p.total - 1, 0)));
+      setPos(Math.min(p.offset, Math.max(p.total - 1, 0)));
     });
     api.callgraph(runId).then((g) => live && setGraph(g));
     return () => {
@@ -257,7 +256,8 @@ export function ReplayView(props: {
         data: { label: m, observed: fns.some((n) => n.observed) } });
       for (const n of fns) {
         const r = positions.get(`c${n.code_id}`) ?? { x: 0, y: 0 };
-        out.push({ id: `c${n.code_id}`, type: "fn", parentId: `m:${m}`, position: { x: r.x, y: r.y }, width: FN_W, height: FN_H,
+        // extent: a function moves inside its module's box, never out of it
+        out.push({ id: `c${n.code_id}`, type: "fn", parentId: `m:${m}`, extent: "parent", position: { x: r.x, y: r.y }, width: FN_W, height: FN_H,
           data: { codeId: n.code_id, label: n.qualname, kind: n.kind, calls: n.calls, observed: n.observed } });
       }
     }

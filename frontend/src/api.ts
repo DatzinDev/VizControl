@@ -193,7 +193,6 @@ export interface TimelinePage {
   offset: number;
   steps: Step[];
   raises: number[];  // the steps where a call raised
-  start: number;  // the first call that is not an import or a class body: where the program's work begins
 }
 
 export interface CallGraph {
