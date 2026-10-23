@@ -1,0 +1,47 @@
+name: Bug report
+description: VizControl recorded or showed something wrong, or failed.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! A vulnerability goes through the [security policy](https://github.com/DatzinDev/VizControl/security/policy), not here.
+        Traces (`.vizc` files) hold values from your program: don't attach one unless you know what is in it.
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: A minimal script and the command you ran (or a public project and the command).
+      placeholder: |
+        ```python
+        # app.py
+        ```
+        vizcontrol run --serve app.py
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened instead
+      description: What the program really did, and what the viewer or CLI showed. A screenshot helps.
+    validations:
+      required: true
+  - type: input
+    id: vizcontrol
+    attributes:
+      label: VizControl version
+      description: '`python -c "import vizcontrol; print(vizcontrol.__version__)"`'
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version and OS
+      placeholder: 3.12.7 on Ubuntu 24.04
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Tracebacks, the browser and its console output if the viewer is involved, frameworks used.

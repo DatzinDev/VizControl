@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a vulnerability
+    url: https://github.com/DatzinDev/VizControl/security/advisories/new
+    about: Privately, never in a public issue.
+  - name: Questions and ideas
+    url: https://github.com/DatzinDev/VizControl/discussions
+    about: How to use it with your project, or an idea to talk through first.
