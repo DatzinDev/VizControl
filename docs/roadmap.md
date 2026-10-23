@@ -13,6 +13,7 @@ a breaking change.
 | 0.2 | Readable stages for any project, Mermaid export, route map over many runs, serializers for libraries, failure in context, `vizcontrol diff`. |
 | 0.3 | Async capture, scoped runs, ASGI/WSGI middleware; fixes from tracing real projects (black, rich, Flask, more-itertools), bounded memory and file size, `run --serve`. |
 | 0.4 | The viewer becomes one view, Replay: call graph by module, transcript, timeline, watches, inferred callbacks, rearrangeable layout. The structure views left the viewer (their analysis stays in the CLI and the API). |
+| 0.5 | Export the graph as a PNG and the replay as an animated GIF, delete runs from the viewer, each new call flashes its function (loops show they are at work), a tab icon. |
 
 ## Next
 
