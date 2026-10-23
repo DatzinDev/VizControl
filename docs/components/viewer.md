@@ -14,7 +14,8 @@ graph and the watches; the viewer lays them out and plays them.
   a run (shown on hover) deletes its file, after a confirmation.
 - **Call graph**: functions as nodes inside one box per module, so the layers of a project show; an arrow per
   "A called B". As the recording plays it lights up: functions already run, the call stack, the current function,
-  red where it raised. Imports and class bodies are left off the graph. Callback arrows (see below) are dashed and
+  red where it raised. Each new call flashes its function, so one called again and again (a loop, a `map()`) shows
+  it is still at work. Imports and class bodies are left off the graph. Callback arrows (see below) are dashed and
   labelled with where the function was (`via self.steps[1]`). The path to the current call is drawn solid and thick
   on top of the rest. Double-click a function to jump to its first call. A module's box can be dragged with its
   functions, and a function within its box, never out of it (Ctrl/⌘-click selects several, Shift-drag a box); where
