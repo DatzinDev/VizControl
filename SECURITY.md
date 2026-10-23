@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-VizControl is in alpha: only the latest release receives security fixes.
+VizControl is in beta: only the latest release receives security fixes.
 
 ## Reporting a vulnerability
 
