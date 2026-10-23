@@ -4,7 +4,7 @@
 
 ## Responsibility
 
-Serve the prebuilt [viewer](viewer.md) and a read-only JSON API over one or more `.vizc` files. It is the only
+Serve the prebuilt [viewer](viewer.md) and a JSON API over one or more `.vizc` files, read-only but for deleting a run. It is the only
 way the viewer gets data, so it is also where older file formats are adapted.
 
 ## Requirements covered
@@ -38,6 +38,7 @@ All responses are JSON. Lists are paged with `offset`/`limit`. Fields derived by
 |---|---|---|
 | `GET /api/runs` | Run summaries: id, target, kind, outcome, started, duration, calls, truncated, `http_status` for request runs, `max_depth` and `cut_calls` (where `max_calls` stopped tracing). | `Reader.run` |
 | `GET /api/runs/{run}/calls/{id}/path` | Ancestors to root: the call stack of a step. | `Reader` |
+| `DELETE /api/runs/{run}` | Removes the run's file and its `-wal`/`-shm`; `{"deleted": run}`. The only request that changes anything: 403 unless the server is on loopback, the Host is a loopback name and a browser's `Origin` (if sent) is the viewer's own. A cross-site page can't send it anyway (DELETE needs a CORS preflight the server never answers). 404 for anything not in the registry. | `Runs.delete` |
 | `GET /api/runs/{run}/values/{id}` | Full value tree, opened from a step. | `Reader.value` |
 | `GET /api/runs/{run}/objects/{oid}` | Object appearances (nested ones included), flow links, changes: the history in the value panel. | `analysis.object_flow` |
 | `GET /api/runs/{run}/error` | Error path, or `null` (also for an `ok` run that let `SystemExit(0)` escape): where a failed run opens. | `analysis.error_path` |

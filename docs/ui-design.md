@@ -64,6 +64,7 @@ Type: **Inter** for UI (12/14/16/20), **JetBrains Mono** for code, values and lo
 - **Transcript line** (mono 12): `→ call(args)`, `↩` for a callback with a `color.flow` tag, `← returned value` in
   `color.status.ok`, `✗ raised Type: message` in `color.status.raised`; later steps faded, the current one
   highlighted.
+- **Run row**: outcome icon, label, duration; a muted ✕ on hover deletes the run (red on hover).
 - **Graph actions** (top right, small outlined buttons): PNG, GIF, Reset layout; while exporting, the progress
   (`GIF 12/80`) replaces them.
 - **Scrubber**: the play button in accent, red tick marks where calls raised, the step counter in mono.

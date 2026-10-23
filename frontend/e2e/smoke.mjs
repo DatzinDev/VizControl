@@ -184,6 +184,19 @@ await check("a value opens with its full tree", async () => {
   await page.click(".back");
 });
 
+await check("a run is deleted from the list, and stays deleted", async () => {  // last: it removes bad.vizc
+  page.once("dialog", (d) => d.accept());
+  const before = (await page.$$(".run-item")).length;
+  const row = (await page.$$(".run-item"))[(await page.$$eval(".run-row", (rs) => rs.findIndex((r) => r.title === "bad.vizc")))];
+  await row.hover();
+  await (await row.$(".run-del")).click();
+  await wait(800);
+  expect((await page.$$(".run-item")).length === before - 1, "the run is still listed");
+  await page.reload({ waitUntil: "networkidle0" });
+  const ids = await page.$$eval(".run-row", (rs) => rs.map((r) => r.title));
+  expect(!ids.includes("bad.vizc") && ids.includes("ok.vizc"), `after reload: ${ids}`);
+});
+
 await check("no uncaught page errors", async () => expect(!errors.length, errors.join("; ")));
 
 await browser.close();

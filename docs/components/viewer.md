@@ -10,7 +10,8 @@ graph and the watches; the viewer lays them out and plays them.
 
 ## One view: Replay
 
-- **Runs** on the left; the URL keeps `run` and `step`, so a link opens the same moment of the same run.
+- **Runs** on the left; the URL keeps `run` and `step`, so a link opens the same moment of the same run. The ✕ on
+  a run (shown on hover) deletes its file, after a confirmation.
 - **Call graph**: functions as nodes inside one box per module, so the layers of a project show; an arrow per
   "A called B". As the recording plays it lights up: functions already run, the call stack, the current function,
   red where it raised. Imports and class bodies are left off the graph. Callback arrows (see below) are dashed and

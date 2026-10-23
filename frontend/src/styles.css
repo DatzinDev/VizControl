@@ -64,6 +64,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .run-row { display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; border-radius: 6px; text-align: left; width: 100%; }
 .run-row:hover, .run-row.active { background: var(--surface-2); }
 .run-row .name { font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.run-item { display: flex; align-items: center; min-width: 0; }
+.run-item .run-row { min-width: 0; }
+.run-del { color: var(--muted); font-size: 11px; padding: 4px 6px; border-radius: 6px; opacity: 0; }
+.run-item:hover .run-del, .run-del:focus-visible { opacity: 1; }
+.run-del:hover { color: var(--raised); background: var(--surface-2); }
 
 /* canvas */
 .canvas { position: relative; min-width: 0; }
