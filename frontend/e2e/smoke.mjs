@@ -72,6 +72,23 @@ await check("a callback says how it was called and where the function came from"
   expect((await page.$$eval(".react-flow__edge-text", (ts) => ts.some((t) => t.textContent.includes("via self.steps")))), "no 'via' edge");
 });
 
+await check("a function called again in a loop flashes on every call", async () => {
+  await open("ok.vizc");
+  for (let i = 0; i < 80 && !(await text(".now-line")).includes("clean_row(row="); i++) {
+    await page.keyboard.press("ArrowRight");
+    await wait(60);
+  }
+  await wait(300);
+  await page.$eval(".fn.current .pulse", (p) => p.setAttribute("data-old", ""));
+  await page.keyboard.press("ArrowRight");  // clean_row returns: the same call, the same pulse
+  await wait(300);
+  expect(await page.$(".fn.current .pulse[data-old]"), "a return flashed the node again");
+  await page.keyboard.press("ArrowRight");  // the next clean_row call
+  await wait(300);
+  expect((await text(".now-line")).includes("clean_row(row="), `now: ${await text(".now-line")}`);
+  expect((await page.$$(".pulse")).length === 1 && !(await page.$(".pulse[data-old]")), "the next call did not flash");
+});
+
 await check("the arrows never disappear while the recording plays", async () => {
   await open("ok.vizc");
   const counts = [];

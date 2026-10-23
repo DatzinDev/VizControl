@@ -26,14 +26,18 @@ const handles = (
  * the same between steps: new node objects make it re-adopt them and drop every edge for a frame (the arrows
  * flickered away while playing). */
 const StepState = createContext<(codeId: number) => FnState>(() => "future");
+/** The current function and its call: a new call of the same function (a loop) remounts the pulse, which flashes. */
+const CallPulse = createContext<{ code: number; call: number } | null>(null);
 
 function FnNode({ data }: NodeProps) {
   const d = data as { codeId: number; label: string; kind: string; calls: number; observed: boolean };
   const state = useContext(StepState)(d.codeId);
+  const pulse = useContext(CallPulse);
   const name = d.kind === "module" ? "import" : d.kind === "class" ? `class ${d.label}` : d.label;
   return (
     <div className={`fn ${state} ${d.observed ? "" : "lib"}`} title={d.label}>
       {handles}
+      {pulse?.code === d.codeId && <span key={pulse.call} className="pulse" />}
       <span className="q">{name}</span>
       <span className="count">{d.calls > 1 ? `×${d.calls}` : ""}</span>
     </div>
@@ -316,6 +320,7 @@ export function ReplayView(props: {
     const box = n && nodes.find((x) => x.id === n.parentId);
     return n && box ? { x: box.position.x + n.position.x, y: box.position.y + n.position.y } : undefined;
   };
+  const pulse = useMemo(() => (now ? { code: now.code_id, call: now.call_id } : null), [now?.code_id, now?.call_id]);
   const stateOf = useMemo(() => {
     const onStack = new Set(stackCodes);
     const first = new Map(graph?.nodes.map((n) => [n.code_id, n.first_seq]));
@@ -419,7 +424,7 @@ export function ReplayView(props: {
       <div className="replay-stage">
         <div className={`replay-graph ${exporting ? "exporting" : ""}`} ref={graphBox}>
           {positions && (
-            <StepState.Provider value={stateOf}>
+            <StepState.Provider value={stateOf}><CallPulse.Provider value={pulse}>
             <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} key={runId} onNodesChange={onNodesChange}
               onNodeDoubleClick={(_, n) => {
                 const g = graph.nodes.find((x) => `c${x.code_id}` === n.id);
@@ -432,7 +437,7 @@ export function ReplayView(props: {
               <Controls showInteractive={false} position="bottom-right" />
               <FollowCurrent at={now && absolute(now.code_id)} big={nodes.length > 40} />
             </ReactFlow>
-            </StepState.Provider>
+            </CallPulse.Provider></StepState.Provider>
           )}
           <div className="replay-legend">drag to rearrange (Ctrl/⌘-click: several · Shift-drag: a box) · double-click a function to jump to its first call · ← → step · space play</div>
           <div className="graph-actions">

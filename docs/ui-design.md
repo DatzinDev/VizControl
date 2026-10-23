@@ -55,7 +55,8 @@ Type: **Inter** for UI (12/14/16/20), **JetBrains Mono** for code, values and lo
 
 - **Function node** (180×46, mono): name and `×N` calls. States: *not yet run* (faint), *already run*, *on the call
   stack* (accent border), *current* (accent fill and halo), *raised* (red fill and halo), *library* (dashed,
-  muted). Dragging moves it within its module's box; selected nodes get a `color.flow` outline.
+  muted). Each new call flashes it (0.5 s, a fill and a ring that grows and fades, in the state's colour; the fill
+  alone with reduced motion). Dragging moves it within its module's box; selected nodes get a `color.flow` outline.
 - **Module box**: the module's name at the top-left, its functions inside; dashed for a library. Dragging it carries
   its functions.
 - **Edges** (bezier, arrowheads): *seen* `color.text-muted`, *not yet run* faint, *the path to the current call*

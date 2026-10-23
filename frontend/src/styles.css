@@ -168,6 +168,18 @@ button.oid:hover { outline: 1px solid var(--flow); }
 .fn.stack { border: 1.5px solid var(--accent); }
 .fn.current { border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 22%, var(--surface)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); }
 .fn.failed { border: 2px solid var(--raised); background: color-mix(in srgb, var(--raised) 22%, var(--surface)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--raised) 25%, transparent); }
+/* each new call flashes the node, so a function called again and again (a loop) shows it is still at work */
+.fn { position: relative; }
+.fn .pulse { position: absolute; inset: -2px; border-radius: 8px; pointer-events: none; animation: fn-pulse .5s ease-out forwards;
+  --pulse: var(--accent); }
+.fn.failed .pulse { --pulse: var(--raised); }
+@keyframes fn-pulse {
+  from { background: color-mix(in srgb, var(--pulse) 45%, transparent); box-shadow: 0 0 0 0 color-mix(in srgb, var(--pulse) 80%, transparent); }
+  to { background: transparent; box-shadow: 0 0 0 12px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {  /* the flash stays, without the ring that grows */
+  @keyframes fn-pulse { from { background: color-mix(in srgb, var(--pulse) 45%, transparent); } to { background: transparent; } }
+}
 .transcript { overflow: auto; border-top: 1px solid var(--border); background: var(--surface); font-family: var(--mono); font-size: 12px; padding: 4px 0; }
 .transcript .line { display: flex; gap: 10px; width: 100%; text-align: left; padding: 2px 12px; white-space: nowrap; color: var(--text); }
 .transcript .line:hover { background: var(--surface-2); }
