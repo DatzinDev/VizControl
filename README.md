@@ -103,7 +103,9 @@ version. Requires Python 3.12+.
 ## Contributing
 
 Issues and pull requests are welcome. If it got something wrong on your code, a minimal script that reproduces it
-is the most useful report you can send. To report a vulnerability, see [SECURITY.md](https://github.com/DatzinDev/VizControl/blob/main/SECURITY.md).
+is the most useful report you can send. [CONTRIBUTING.md](https://github.com/DatzinDev/VizControl/blob/main/CONTRIBUTING.md)
+has the setup and the conventions, and questions go to [Discussions](https://github.com/DatzinDev/VizControl/discussions).
+To report a vulnerability, see [SECURITY.md](https://github.com/DatzinDev/VizControl/blob/main/SECURITY.md).
 
 ```
 uv sync                                   # Python package (editable) + pytest
