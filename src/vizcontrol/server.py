@@ -67,6 +67,16 @@ class Runs:
             self._cache = {k: v for k, v in self._cache.items() if k[0] != run_id}
         return hit[1]
 
+    def delete(self, run_id: str) -> None:
+        """Remove a run's file and SQLite's -wal/-shm next to it. The path comes from the registry, as for reading."""
+        path = self.path(run_id)
+        hit = self._readers.pop(run_id, None)
+        if hit is not None:
+            hit[1].close()
+        self._cache = {k: v for k, v in self._cache.items() if k[0] != run_id}
+        for f in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
+            f.unlink(missing_ok=True)
+
     def staging(self) -> tuple[frozenset, int]:
         """How the served project is staged (`analysis.Stager`), decided over all runs so that a stage has the same
         name in every run: the module path depth (`analysis.auto_depth` of every run's module stages), and the head
@@ -315,6 +325,29 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": type(e).__name__, "message": str(e)})
             return
         self._static(url.path)
+
+    def do_DELETE(self):
+        # the only request that changes anything: a loopback server only, addressed to a loopback name, and from the
+        # viewer's own page (a browser sends Origin; another site's page can't send DELETE here without a preflight
+        # this server never answers, and Origin catches what slips past)
+        origin = self.headers.get("Origin")
+        if (not self.server.allowed_hosts or _host_name(self.headers.get("Host")) not in self.server.allowed_hosts
+                or (origin is not None and urlsplit(origin).netloc != self.headers.get("Host"))):
+            self._json(HTTPStatus.FORBIDDEN,
+                       {"error": "forbidden", "message": "runs are deleted from the local viewer only"})
+            return
+        m = re.fullmatch(r"/api/runs/([^/]+)", urlsplit(self.path).path)
+        runs: Runs = self.server.runs
+        try:
+            if not m:
+                raise NotFound(self.path)
+            with runs.lock:
+                runs.delete(unquote(m.group(1)))
+            self._json(HTTPStatus.OK, {"deleted": unquote(m.group(1))})
+        except NotFound as e:
+            self._json(HTTPStatus.NOT_FOUND, {"error": "not_found", "message": str(e)})
+        except OSError as e:
+            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": type(e).__name__, "message": str(e)})
 
     def _static(self, path: str) -> None:
         root = _static_root()

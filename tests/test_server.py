@@ -159,3 +159,33 @@ def test_summary_says_where_capture_was_cut(tmp_path):
     deep, many = S._summary(runs, "deep.vizc"), S._summary(runs, "many.vizc")
     assert deep["max_depth"] == 5 and deep["truncated"] == ["limit_depth"] and deep["cut_calls"] == []
     assert many["truncated"] == ["limit_calls"] and len(many["cut_calls"]) == 1
+
+
+def test_a_run_is_deleted_only_from_the_local_viewer(runs_dir, tmp_path):
+    import http.client
+
+    for name in ("basic.vizc", "vip.vizc"):
+        shutil.copy(runs_dir / name, tmp_path / name)
+    (tmp_path / "secret.txt").write_text("not a run")
+    server = make_server(tmp_path, port=0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    port = server.server_address[1]
+    base = f"http://127.0.0.1:{port}"
+
+    def delete(path, **headers):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        conn.request("DELETE", path, headers={"Host": f"localhost:{port}", **headers})
+        return conn.getresponse().status
+
+    try:
+        assert api(base, "/api/runs/basic.vizc")[0] == 200  # opened: a Reader holds the file
+        assert delete("/api/runs/basic.vizc", Origin="https://evil.example") == 403
+        assert delete("/api/runs/basic.vizc", Host="evil.example") == 403
+        assert delete("/api/runs/secret.txt") == 404 and delete("/api/runs/..%2Fsecret.txt") == 404
+        assert delete("/api/runs/basic.vizc", Origin=f"http://localhost:{port}") == 200
+        assert not (tmp_path / "basic.vizc").exists() and (tmp_path / "secret.txt").exists()
+        assert [r["id"] for r in api(base, "/api/runs")[1]] == ["vip.vizc"]
+        server.allowed_hosts = ()  # served on a non-loopback address: nothing is deleted
+        assert delete("/api/runs/vip.vizc") == 403 and (tmp_path / "vip.vizc").exists()
+    finally:
+        server.shutdown()

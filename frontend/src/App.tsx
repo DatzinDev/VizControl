@@ -40,6 +40,14 @@ export function App() {
   }, [runId]);
 
   const run = runs?.find((r) => r.id === runId);
+  const remove = (r: RunSummary) => {
+    if (!confirm(`Delete the run ${runLabel(r)}?\n${r.id}\n\nIts file is removed from disk.`)) return;
+    api.deleteRun(r.id).then(() => {
+      const left = runs!.filter((x) => x.id !== r.id);
+      setRuns(left);
+      if (r.id === runId) setRunId(left.length ? left[left.length - 1].id : null);
+    }).catch((e) => alert(String(e)));
+  };
   const onStep = (i: number) => history.replaceState(null, "", `#${new URLSearchParams({ run: runId!, step: String(i + 1) })}`);
 
   return (
@@ -59,12 +67,15 @@ export function App() {
         <aside className="panel">
           <div className="label">Runs</div>
           {runs?.map((r) => (
-            <button key={r.id} className={`run-row ${r.id === runId ? "active" : ""}`} onClick={() => setRunId(r.id)} title={r.id}>
-              <span className={r.error ? "muted" : r.outcome} style={{ fontSize: 10 }}>{r.error ? "?" : outcomeIcon[r.outcome]}</span>
-              <span className="name">{runLabel(r)}</span>
-              {r.http_status && <span className={Number(r.http_status) >= 500 ? "raised mono" : "muted mono"} style={{ fontSize: 11 }}>{r.http_status}</span>}
-              <span className="muted" style={{ fontSize: 11 }}>{ms(r.duration_ns)}</span>
-            </button>
+            <div key={r.id} className="run-item">
+              <button className={`run-row ${r.id === runId ? "active" : ""}`} onClick={() => setRunId(r.id)} title={r.id}>
+                <span className={r.error ? "muted" : r.outcome} style={{ fontSize: 10 }}>{r.error ? "?" : outcomeIcon[r.outcome]}</span>
+                <span className="name">{runLabel(r)}</span>
+                {r.http_status && <span className={Number(r.http_status) >= 500 ? "raised mono" : "muted mono"} style={{ fontSize: 11 }}>{r.http_status}</span>}
+                <span className="muted" style={{ fontSize: 11 }}>{ms(r.duration_ns)}</span>
+              </button>
+              <button className="run-del" onClick={() => remove(r)} title="Delete this run" aria-label={`Delete the run ${runLabel(r)}`}>✕</button>
+            </div>
           ))}
         </aside>
 

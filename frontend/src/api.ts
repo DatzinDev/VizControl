@@ -147,6 +147,10 @@ const run = (id: string) => `/api/runs/${encodeURIComponent(id)}`;
 
 export const api = {
   runs: () => get<RunSummary[]>("/api/runs"),
+  deleteRun: async (r: string) => {
+    const res = await fetch(run(r), { method: "DELETE" });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || `${res.status} DELETE ${r}`);
+  },
   path: (r: string, id: number) => get<CallNode[]>(`${run(r)}/calls/${id}/path`),
   value: (r: string, id: number) => get<Value>(`${run(r)}/values/${id}`),
   object: (r: string, oid: number) => get<ObjectFlow>(`${run(r)}/objects/${oid}`),

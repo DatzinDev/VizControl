@@ -39,7 +39,7 @@ flowchart LR
 | Serialization | Turn live objects into bounded, side-effect-free, redacted values with object ids. | [serialization.md](components/serialization.md) |
 | Storage | Write events to SQLite in batches; read them back with an indexed query API. | [storage.md](components/storage.md) |
 | Analysis | Pure functions over stored data: the replay timeline, call graph and inferred callbacks, watches, error path, object history; stages, run diff and search for the CLI and the API. | [analysis.md](components/analysis.md) |
-| Server | Serve the viewer's static files and a read-only JSON API over one or more `.vizc` files. | [server.md](components/server.md) |
+| Server | Serve the viewer's static files and a JSON API over one or more `.vizc` files: read-only, but for deleting a run. | [server.md](components/server.md) |
 | Viewer | One view, Replay: the run as a recording (call graph by module, transcript, timeline, watches, callbacks). | [viewer.md](components/viewer.md) |
 | CLI | `vizcontrol run`, `serve`, `ls`, `info`, `diagram`, `diff`; config loading. | [cli.md](components/cli.md) |
 
@@ -98,7 +98,7 @@ Modules start as single files and are split only when they grow past one clear r
 | Trace storage | One SQLite file per run (`.vizc`) | Stdlib, single file to share, indexed queries for slices/search/diff without loading everything, crash-tolerant with WAL. | Very large runs need columnar storage. |
 | Viewer | Static SPA prebuilt into the wheel | Rich graph interaction (React Flow, elkjs) that a Python UI can't match; users still only `pip install`. | — |
 | What the viewer shows | One recording view (0.4) instead of zoom levels | Users understood a run by watching it happen (who calls whom, when, with what), not from structure diagrams. | Structure is wanted again: the stage analysis is still in the API and `vizcontrol diagram`. |
-| Server | stdlib `http.server` (threaded) | Zero dependencies, local and single-user, read-only. | Live streaming or many concurrent clients. |
+| Server | stdlib `http.server` (threaded) | Zero dependencies, local and single-user, read-only but for deleting a run. | Live streaming or many concurrent clients. |
 | Analysis location | Python, server side, on demand | One implementation, testable with pytest, viewer stays a thin renderer. Results cached per file. | Latency on huge runs, then precompute into the `.vizc` file at close. |
 | Value capture | Structural encoder, no `__repr__` by default | Calling user code from a tracer can mutate state, recurse into tracing or hang (NFR-SAFE-1). | — |
 | AI | None | Runtime evidence is the source of truth (NFR-AI-1). | Optional plugin reading `.vizc` only. |
