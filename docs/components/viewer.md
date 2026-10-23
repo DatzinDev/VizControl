@@ -18,6 +18,9 @@ graph and the watches; the viewer lays them out and plays them.
   on top of the rest. Double-click a function to jump to its first call. A module's box can be dragged with its
   functions, and a function within its box, never out of it (Ctrl/⌘-click selects several, Shift-drag a box); where
   they were left is remembered per run in this browser, and "Reset layout" puts them back. In a graph of more than 40 functions the camera follows the current one.
+  **PNG** saves the whole graph as it is at this step, whatever part the camera shows; **GIF** plays the run from
+  its first step (at most 300) at the chosen speed into an animated GIF at 2×, then goes back to where it was; each
+  frame after the first keeps the pixels the last one already shows transparent, which keeps it small.
 - **Transcript**: one line per step, indented by depth: `→ clean_rows(rows=…)`, `← clean_rows returned …`,
   `✗ RateTable.rate raised KeyError: GBP`, and `↩` for a callback with its tag.
 - **Scrubber**: play and pause (space), step (← →), jump (the bar, the red marks where a call raised), speed.

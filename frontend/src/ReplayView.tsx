@@ -1,4 +1,6 @@
-import { applyNodeChanges, Background, Controls, Edge, Handle, MarkerType, Node, NodeChange, NodeProps, Position, ReactFlow, useReactFlow } from "@xyflow/react";
+import { applyNodeChanges, Background, Controls, Edge, getNodesBounds, Handle, MarkerType, Node, NodeChange, NodeProps, Position, ReactFlow, useReactFlow } from "@xyflow/react";
+import { applyPalette, GIFEncoder, quantize } from "gifenc";
+import { getFontEmbedCSS, toCanvas } from "html-to-image";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api, Binding, Callback, CallGraph, CallNode, Step, StepValue, Watched } from "./api";
 import { shortName } from "./format";
@@ -9,6 +11,7 @@ const PAGE = 500;  // steps fetched at a time
 const FN_W = 180;
 const FN_H = 46;
 const SPEEDS = [1, 2, 5, 10, 25];  // steps per second
+const GIF_MAX = 300;  // ponytail: frames in one GIF, from the first step; a range picker if longer runs need it
 
 type FnState = "future" | "seen" | "stack" | "current" | "failed";
 
@@ -88,6 +91,29 @@ function saveMoved(runId: string, nodes: Node[] | null) {
   }
 }
 
+function download(blob: Blob, name: string) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/** The whole diagram on a canvas, whatever part of it the camera shows: the module boxes (they hold every function)
+ * plus a margin, on the page's background. */
+function drawGraph(viewport: HTMLElement, nodes: Node[], fontEmbedCSS: string, pixelRatio: number) {
+  const pad = 24;
+  const b = getNodesBounds(nodes.filter((n) => !n.parentId));
+  const width = Math.ceil(b.width + 2 * pad), height = Math.ceil(b.height + 2 * pad);
+  return toCanvas(viewport, { width, height, pixelRatio, fontEmbedCSS, backgroundColor: getComputedStyle(document.body).backgroundColor,
+    style: { width: `${width}px`, height: `${height}px`, transform: `translate(${pad - b.x}px, ${pad - b.y}px)` } });
+}
+
+const frame = () => new Promise((r) => requestAnimationFrame(r));
+// inline, not in styles.css: the export copies no stylesheet rules into an edge's svg, only what is on the element
+const labelStyle = { fill: "var(--muted)", fontFamily: "var(--mono)", fontSize: 11 };
+const labelBgStyle = { fill: "var(--bg)" };
+
 function readWatches(): string[] {
   try {
     return JSON.parse(localStorage.getItem("vizcontrol.watches") ?? "[]");
@@ -130,8 +156,10 @@ export function ReplayView(props: {
   const [watches, setWatches] = useState<string[]>(readWatches);
   const [watched, setWatched] = useState<Map<string, Watched[]>>(new Map());
   const [newWatch, setNewWatch] = useState("");
+  const [exporting, setExporting] = useState<string | null>(null);  // what the export is doing, while it runs
   const loading = useRef(new Set<number>());
   const transcript = useRef<HTMLDivElement>(null);
+  const graphBox = useRef<HTMLDivElement>(null);
 
   // a run opens at its start, or where a given call ended (a failure: where it raised)
   useEffect(() => {
@@ -228,7 +256,7 @@ export function ReplayView(props: {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
-      if (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA" || pos == null) return;
+      if (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA" || pos == null || exporting) return;
       if (e.key === "ArrowRight") go(pos + 1);
       else if (e.key === "ArrowLeft") go(pos - 1);
       else if (e.key === " ") setPlaying((p) => !p);
@@ -281,6 +309,8 @@ export function ReplayView(props: {
     saveMoved(runId, null);
     setNodes(laidOut);
   };
+  const drawn = useRef({ cur, stack });  // what the last render showed, for the GIF export to wait on
+  drawn.current = { cur, stack };
   const absolute = (code: number) => {  // where a function sits on the canvas: its box's position plus its own
     const n = nodes.find((x) => x.id === `c${code}`);
     const box = n && nodes.find((x) => x.id === n.parentId);
@@ -310,6 +340,7 @@ export function ReplayView(props: {
       return { id, source: `c${e.source}`, target: `c${e.target}`, type: "default", zIndex: live ? 20 : 10,
         className: live ? "live" : undefined,
         label: seen && !live ? [tag, count].filter(Boolean).join(" ") || undefined : undefined,  // nothing over the path
+        labelStyle, labelBgStyle,
         style: { stroke: color, strokeWidth: live ? 3.5 : 1.2, opacity: seen ? 1 : 0.35, strokeDasharray: e.callback && !live ? "6 4" : undefined },
         markerEnd: { type: MarkerType.ArrowClosed, color, width: live ? 18 : 14, height: live ? 18 : 14 } };
     });
@@ -328,11 +359,65 @@ export function ReplayView(props: {
     if (n && !watches.includes(n)) setWatches([...watches, n]);
     setNewWatch("");
   };
+  const fileName = runId.replace(/\.vizc$/, "");
+  const exportPng = async () => {
+    setExporting("PNG…");
+    try {
+      const viewport = graphBox.current!.querySelector<HTMLElement>(".react-flow__viewport")!;
+      const canvas = await drawGraph(viewport, nodes, await getFontEmbedCSS(viewport), 2);
+      canvas.toBlob((b) => b && download(b, `${fileName}-step${pos + 1}.png`));
+    } finally {
+      setExporting(null);
+    }
+  };
+  /** The recording from its start, one frame per step at the chosen speed, as it would play; then back where it was. */
+  const exportGif = async () => {
+    const back = pos, from = 0, to = Math.min(total - 1, GIF_MAX - 1);
+    setPlaying(false);
+    try {
+      const viewport = graphBox.current!.querySelector<HTMLElement>(".react-flow__viewport")!;
+      const fonts = await getFontEmbedCSS(viewport);
+      const gif = GIFEncoder();
+      let prev: Uint8ClampedArray | null = null;
+      for (let i = from; i <= to; i++) {
+        setExporting(`GIF ${i - from + 1}/${to - from + 1}`);
+        setPos(i);
+        for (let t = 0; t < 100; t++) {  // until the step is drawn: its page loaded and its call stack fetched
+          const { cur, stack } = drawn.current;
+          if (cur?.i === i && stack[stack.length - 1]?.id === cur.call_id) break;
+          await new Promise((r) => setTimeout(r, 20));
+        }
+        await frame();  // React Flow takes the new edges a render later
+        await frame();
+        const canvas = await drawGraph(viewport, nodes, fonts, 2);  // as sharp as the PNG: at 1× the 12px names blur
+        const { data } = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height);
+        const palette = quantize(data, 255);
+        const index = applyPalette(data, palette);
+        // a step changes a few nodes and edges: every pixel the last frame already shows is left transparent (kept,
+        // dispose 1), which is what keeps a 2× GIF small
+        const kept = palette.length;
+        if (prev) {
+          for (let p = 0; p < index.length; p++) {
+            const o = p * 4;
+            if (data[o] === prev[o] && data[o + 1] === prev[o + 1] && data[o + 2] === prev[o + 2]) index[p] = kept;
+          }
+        }
+        gif.writeFrame(index, canvas.width, canvas.height,
+          { palette: [...palette, [0, 0, 0]], delay: 1000 / speed, transparent: prev != null, transparentIndex: kept, dispose: 1 });
+        prev = data;
+      }
+      gif.finish();
+      download(new Blob([gif.bytes()], { type: "image/gif" }), `${fileName}-steps${from + 1}-${to + 1}.gif`);
+    } finally {
+      setPos(back);
+      setExporting(null);
+    }
+  };
 
   return (
     <div className="replay">
       <div className="replay-stage">
-        <div className="replay-graph">
+        <div className={`replay-graph ${exporting ? "exporting" : ""}`} ref={graphBox}>
           {positions && (
             <StepState.Provider value={stateOf}>
             <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} key={runId} onNodesChange={onNodesChange}
@@ -350,7 +435,13 @@ export function ReplayView(props: {
             </StepState.Provider>
           )}
           <div className="replay-legend">drag to rearrange (Ctrl/⌘-click: several · Shift-drag: a box) · double-click a function to jump to its first call · ← → step · space play</div>
-          <button className="reset-layout" onClick={resetLayout} title="Put every node back where the automatic layout had it">Reset layout</button>
+          <div className="graph-actions">
+            {exporting ? <span className="muted">{exporting}</span> : <>
+              <button className="export-png" onClick={exportPng} title="Save the whole diagram, as it is at this step, as a PNG">PNG</button>
+              <button className="export-gif" onClick={exportGif} title={`Save the replay from its first step (at most ${GIF_MAX} steps, at the chosen speed) as a GIF`}>GIF</button>
+              <button className="reset-layout" onClick={resetLayout} title="Put every node back where the automatic layout had it">Reset layout</button>
+            </>}
+          </div>
         </div>
         <div className="transcript" role="log" aria-label="What happened, step by step" ref={transcript}>
           {lines.map((s) => (

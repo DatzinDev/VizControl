@@ -40,7 +40,7 @@ Type: **Inter** for UI (12/14/16/20), **JetBrains Mono** for code, values and lo
 
 ```
 ┌ TopBar 48: logo · run (outcome · duration) ───────────────────────────────────────────────────────────┐
-│ Runs 260  │ Call graph: one box per module, functions inside        [Reset layout] │ Panel 380          │
+│ Runs 260  │ Call graph: one box per module, functions in  [PNG] [GIF] [Reset layout] │ Panel 380          │
 │ ● etl     │   ┌ etl.pipeline ────┐      ┌ etl.transforms.clean ┐                    │ STEP 61            │
 │ ⚠ etl bad │   │ Pipeline.run ━━━━┿━━━━▶ │ clean_rows ━━▶ clean_row│                  │ ↩ clean_row(row=…) │
 │           │   └──────────────────┘      └──────────────────────┘                    │ Callback · inferred│
@@ -64,6 +64,8 @@ Type: **Inter** for UI (12/14/16/20), **JetBrains Mono** for code, values and lo
 - **Transcript line** (mono 12): `→ call(args)`, `↩` for a callback with a `color.flow` tag, `← returned value` in
   `color.status.ok`, `✗ raised Type: message` in `color.status.raised`; later steps faded, the current one
   highlighted.
+- **Graph actions** (top right, small outlined buttons): PNG, GIF, Reset layout; while exporting, the progress
+  (`GIF 12/80`) replaces them.
 - **Scrubber**: the play button in accent, red tick marks where calls raised, the step counter in mono.
 - **Panel**: the step line, file and line, a dashed `color.flow` callback box, value rows (name, preview, 👁 to
   watch), watch cards (amber border and "Δ now" when the value changed at this step), call stack rows.

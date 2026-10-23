@@ -1,5 +1,8 @@
 // End-to-end smoke test of the built viewer (Replay) against `vizcontrol serve` of the ETL example (e2e/smoke.sh).
 // Usage: node e2e/smoke.mjs <base-url>; CHROME_PATH overrides the browser.
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import puppeteer from "puppeteer-core";
 
 const base = process.argv[2] ?? "http://127.0.0.1:7171/";
@@ -120,6 +123,38 @@ await check("the path to the current call is painted, and nodes can be moved", a
   await wait(400);
   expect(await inBox(), "a function left its module's box");
   await page.click(".reset-layout");
+});
+
+await check("the diagram exports as a PNG and the replay as a GIF", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "vizc-export-"));
+  const cdp = await page.createCDPSession();
+  await cdp.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: dir });
+  await open("ok.vizc");
+  await page.click(".scrubber button[title='Last step']");
+  for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowLeft");
+  await wait(600);
+  const saved = async (ext) => {
+    for (let i = 0; i < 100; i++) {
+      const f = (await readdir(dir)).find((n) => n.endsWith(ext));
+      if (f) return readFile(join(dir, f));
+      await wait(200);
+    }
+    throw new Error(`no .${ext} downloaded`);
+  };
+  await page.click(".export-png");
+  const png = await saved("png");
+  expect(png.subarray(1, 4).toString() === "PNG" && png.readUInt32BE(16) > 400, `png: ${png.length} bytes, ${png.readUInt32BE(16)} wide`);
+  const at = await stepLabel();
+  await page.click(".export-gif");
+  await page.waitForFunction(() => !document.querySelector(".replay-graph.exporting"), { timeout: 120000 });
+  const gif = await saved("gif");
+  // one graphic control block per frame (the bytes can also turn up inside image data: at least, not exactly)
+  const frames = gif.toString("latin1").split("\x21\xf9\x04").length - 1;
+  const total = Number((await text(".scrubber .mono")).split(" / ")[1]);
+  expect(gif.subarray(0, 6).toString() === "GIF89a" && frames >= total, `gif: ${frames} frames of ${total} steps`);
+  await wait(400);
+  expect((await stepLabel()) === at, `the replay did not go back to step ${at}: at ${await stepLabel()}`);
+  await rm(dir, { recursive: true });
 });
 
 await check("a failed run opens on the step where it raised", async () => {

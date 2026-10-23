@@ -75,8 +75,6 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .react-flow { --xy-background-color: var(--bg); }
 .react-flow__controls { box-shadow: none; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .react-flow__controls-button { background: var(--surface); border-color: var(--border); fill: var(--muted); }
-.react-flow__edge-textbg { fill: var(--bg); }
-.react-flow__edge-text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
 
 /* graph nodes */
 .node .title span.q { overflow: hidden; text-overflow: ellipsis; }
@@ -154,7 +152,7 @@ button.oid:hover { outline: 1px solid var(--flow); }
 .replay { display: contents; }
 .replay-stage { display: grid; grid-template-rows: 1fr 230px 52px; min-width: 0; min-height: 0; }
 .replay-graph { position: relative; min-height: 0; }
-.replay-legend { position: absolute; top: 12px; left: 16px; z-index: 5; color: var(--muted); font-size: 12px; pointer-events: none; }
+.replay-legend { position: absolute; top: 12px; left: 16px; right: 240px; z-index: 5; color: var(--muted); font-size: 12px; pointer-events: none; }
 .fn { width: 180px; height: 46px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface);
   display: flex; align-items: center; justify-content: space-between; gap: 8px; font-family: var(--mono); font-size: 12px;
   transition: opacity .2s, border-color .2s, background .2s; }
@@ -214,7 +212,11 @@ button.oid:hover { outline: 1px solid var(--flow); }
   display: flex; flex-direction: column; gap: 4px; }
 .callback-box .label { color: var(--flow); }
 .react-flow__edge.live .react-flow__edge-path { filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent) 70%, transparent)); }
-.reset-layout { position: absolute; top: 8px; right: 12px; z-index: 5; font-size: 12px; padding: 3px 10px; border-radius: 6px;
+.graph-actions { position: absolute; top: 8px; right: 12px; z-index: 5; display: flex; gap: 6px; align-items: center; font-size: 12px; }
+.graph-actions button { font-size: 12px; padding: 3px 10px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--surface); color: var(--muted); }
-.reset-layout:hover { color: var(--text); }
+.graph-actions button:hover { color: var(--text); }
+/* while exporting: no half-done transitions in the frames, no dragging under the capture */
+.replay-graph.exporting * { transition: none !important; }
+.replay-graph.exporting .react-flow { pointer-events: none; }
 .react-flow__node.selected .fn, .react-flow__node.selected .file-box { outline: 2px solid var(--flow); outline-offset: 2px; }
